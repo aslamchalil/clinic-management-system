@@ -10,8 +10,7 @@ Rule of thumb used here:
 """
 from rest_framework import serializers
 
-from cmsapp.models import LabBill, LabBillItem, LabRequest, LabResult, MasterLabTest
-
+from cmsapp.models import LabBill, LabBillItem, LabRequest, LabResult, MasterLabTest,PaymentMethodChoices
 
 
 # ------------------------------------------------------------------ master test
@@ -86,7 +85,9 @@ class LabBillPaymentSerializer(serializers.Serializer):
     Input only. The client says HOW the patient paid; it can never send
     payment_status - "PAID" is set by the mark-paid service.
     """
-    payment_method = serializers.ChoiceField(choices=LabBill.PaymentMethodChoices.choices)
+    payment_method = serializers.ChoiceField(
+    choices=PaymentMethodChoices.choices
+)
 
 
 # ------------------------------------------------------------------ results
