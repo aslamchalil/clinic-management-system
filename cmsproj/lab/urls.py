@@ -1,26 +1,35 @@
 # lab/urls.py
-
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from .views import LabRequestViewSet, LabBillViewSet, LabResultViewSet
+
+from .views import (
+    LabBillViewSet,
+    LabRequestViewSet,
+    LabResultViewSet,
+    MasterLabTestViewSet,
+)
 
 router = DefaultRouter()
-router.register(r"lab-requests", LabRequestViewSet, basename="lab-request")
-router.register(r"lab-bills", LabBillViewSet, basename="lab-bill")
-router.register(r"lab-results", LabResultViewSet, basename="lab-result")
+router.register(r"master-tests", MasterLabTestViewSet, basename="lab-master-tests")
+router.register(r"requests", LabRequestViewSet, basename="lab-requests")
+router.register(r"bills", LabBillViewSet, basename="lab-bills")
+router.register(r"results", LabResultViewSet, basename="lab-results")
 
-urlpatterns = router.urls
+urlpatterns = [path("", include(router.urls))]
 
-# Resulting endpoints:
+# Resulting endpoints (mounted at /lab/ in the project urls.py):
 #
-# GET    /lab/lab-requests/                     list lab requests (filter ?status=PAID etc.)
-# GET    /lab/lab-requests/<pk>/                 retrieve one
-# POST   /lab/lab-requests/<pk>/start-processing/  REQUESTED->... PAID -> IN_PROGRESS
+# GET  /lab/master-tests/                       active tests (read-only)
+# GET  /lab/requests/                           ?status= ?priority= ?patient=
+# GET  /lab/requests/<id>/
+# POST /lab/requests/<id>/start-processing/     PAID -> IN_PROGRESS
 #
-# GET    /lab/lab-bills/                         list bills (filter ?payment_status=PENDING)
-# GET    /lab/lab-bills/<pk>/                     retrieve one bill with its items
-# POST   /lab/lab-bills/                          create bill + items for a set of lab_request_ids
-# POST   /lab/lab-bills/<pk>/mark-paid/           confirm payment, cascades PAID to LabRequests
+# GET  /lab/bills/                              ?payment_status= ?patient=
+# POST /lab/bills/                              {"lab_request_ids": [1, 2]}  -> BILLED
+# GET  /lab/bills/<id>/                         bill + items
+# POST /lab/bills/<id>/mark-paid/               {"payment_method": "CASH"}   -> PAID
+# POST /lab/bills/<id>/cancel/                  unpaid only -> REQUESTED
 #
-# GET    /lab/lab-results/                        list results
-# GET    /lab/lab-results/<pk>/                   retrieve one result
-# POST   /lab/lab-results/                        enter a result (only if bill PAID & request IN_PROGRESS)
+# GET  /lab/results/                            ?lab_request= ?consultation= ?patient=
+# GET  /lab/results/<id>/
+# POST /lab/results/                            IN_PROGRESS -> COMPLETED

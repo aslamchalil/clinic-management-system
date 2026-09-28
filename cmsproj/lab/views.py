@@ -1,149 +1,175 @@
-from django.shortcuts import render
-
-# Create your views here.
 # lab/views.py
+"""
+Thin DRF views. All business rules live in lab/services.py.
 
-from rest_framework import viewsets, status, mixins
+Endpoints (see urls.py):
+    GET  master-tests/                    active tests (read-only; Admin manages them)
+    GET  requests/                        lab requests (?status= &priority= &patient=)
+    POST requests/<id>/start-processing/  PAID -> IN_PROGRESS
+    GET/POST bills/                       list / create bill for lab_request_ids
+    POST bills/<id>/mark-paid/            confirm payment -> requests PAID
+    POST bills/<id>/cancel/               cancel unpaid bill -> requests REQUESTED
+    GET/POST results/                     list / enter result (-> request COMPLETED)
+"""
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from django.db import transaction
-from django.shortcuts import get_object_or_404
 
-from cmsapp.models import LabRequest, LabBill, LabResult
+from cmsapp.models import LabBill, LabRequest, LabResult, MasterLabTest
 
-from .permissions import IsLabTechnician
+from . import services
+from .permissions import IsLabTechnician, IsLabTechnicianOrDoctor, limit_to_own_consultations
 from .serializers import (
-    LabRequestSerializer,
-    LabBillSerializer,
     LabBillCreateSerializer,
+    LabBillDetailSerializer,
     LabBillPaymentSerializer,
-    LabResultSerializer,
+    LabBillSerializer,
+    LabRequestSerializer,
     LabResultCreateSerializer,
+    LabResultSerializer,
+    MasterLabTestSerializer,
 )
 
 
-# ----------------------------------------------------------
-# LabRequest — Lab module only VIEWS and progresses status.
-# It never creates a LabRequest (Doctor module does that).
-# ----------------------------------------------------------
-class LabRequestViewSet(mixins.ListModelMixin,
-                         mixins.RetrieveModelMixin,
-                         viewsets.GenericViewSet):
-    queryset = LabRequest.objects.select_related("test", "consultation").all()
+def _filter_by_params(queryset, params, mapping):
+    """Apply ?query_param=value filters. mapping = {param_name: orm_lookup}."""
+    for param, lookup in mapping.items():
+        value = params.get(param)
+        if value:
+            queryset = queryset.filter(**{lookup: value})
+    return queryset
+
+
+# ------------------------------------------------------------------ master tests
+class MasterLabTestViewSet(viewsets.ReadOnlyModelViewSet):
+    """Read-only. Creating/editing tests is a Clinic Admin job."""
+    serializer_class = MasterLabTestSerializer
+    permission_classes = [IsLabTechnicianOrDoctor]
+    queryset = MasterLabTest.objects.filter(is_active=True).order_by("test_name")
+
+
+# ------------------------------------------------------------------ lab requests
+class LabRequestViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Lab requests are CREATED by the Doctor app inside the consultation
+    transaction, so this viewset is read-only plus one workflow action.
+    """
     serializer_class = LabRequestSerializer
-    permission_classes = [IsAuthenticated, IsLabTechnician]
+
+    def get_permissions(self):
+        if self.action == "start_processing":
+            return [IsLabTechnician()]
+        return [IsLabTechnicianOrDoctor()]
 
     def get_queryset(self):
-        qs = super().get_queryset()
-        status_param = self.request.query_params.get("status")
-        if status_param:
-            qs = qs.filter(status=status_param.upper())
-        return qs.order_by("-order_date")
+        qs = (
+            LabRequest.objects.filter(is_active=True)
+            .select_related("test", "consultation__patient")
+            # 'URGENT' sorts after 'NORMAL' alphabetically, so -priority = urgent first.
+            .order_by("-priority", "order_date")
+        )
+        qs = limit_to_own_consultations(qs, self.request.user, "consultation__doctor__staff__user")
+        return _filter_by_params(qs, self.request.query_params, {
+            "status": "status",
+            "priority": "priority",
+            "patient": "consultation__patient_id",
+        })
 
     @action(detail=True, methods=["post"], url_path="start-processing")
     def start_processing(self, request, pk=None):
-        """
-        Technician begins processing a test.
-        Only allowed once the request has been paid for.
-        """
-        lab_request = self.get_object()
-
-        if lab_request.status != LabRequest.Status.PAID:
-            return Response(
-                {"detail": f"LabRequest must be PAID before processing "
-                           f"(current status: {lab_request.status})."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        lab_request.status = LabRequest.Status.IN_PROGRESS
-        lab_request.save(update_fields=["status"])
-        return Response(LabRequestSerializer(lab_request).data)
+        req = services.start_processing(lab_request_id=pk)
+        return Response(LabRequestSerializer(req).data)
 
 
-# ----------------------------------------------------------
-# LabBill — create bill + items together, verify payment
-# ----------------------------------------------------------
-class LabBillViewSet(mixins.ListModelMixin,
-                      mixins.RetrieveModelMixin,
-                      mixins.CreateModelMixin,
-                      viewsets.GenericViewSet):
-    queryset = LabBill.objects.prefetch_related("items", "items__lab_request").all()
-    permission_classes = [IsAuthenticated, IsLabTechnician]
+# ------------------------------------------------------------------ bills
+class LabBillViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    viewsets.GenericViewSet,
+):
+    """No update/delete: a bill only changes through mark-paid or cancel."""
+    permission_classes = [IsLabTechnician]
+
+    def get_queryset(self):
+        qs = LabBill.objects.select_related("patient").order_by("-bill_date")
+        return _filter_by_params(qs, self.request.query_params, {
+            "payment_status": "payment_status",
+            "patient": "patient_id",
+        })
 
     def get_serializer_class(self):
         if self.action == "create":
             return LabBillCreateSerializer
+        if self.action == "retrieve":
+            return LabBillDetailSerializer
+        if self.action == "mark_paid":
+            return LabBillPaymentSerializer
         return LabBillSerializer
-
-    def get_queryset(self):
-        qs = super().get_queryset()
-        payment_status = self.request.query_params.get("payment_status")
-        if payment_status:
-            qs = qs.filter(payment_status=payment_status.upper())
-        return qs.order_by("-bill_date")
-
-    @action(detail=True, methods=["post"], url_path="mark-paid")
-    @transaction.atomic
-    def mark_paid(self, request, pk=None):
-        """
-        Confirms payment on a LabBill and propagates PAID status
-        to every LabRequest linked through its LabBillItems.
-        """
-        lab_bill = self.get_object()
-
-        if lab_bill.payment_status == LabBill.PaymentStatus.PAID:
-            return Response(
-                {"detail": "This bill is already marked PAID."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        payment_serializer = LabBillPaymentSerializer(data=request.data)
-        payment_serializer.is_valid(raise_exception=True)
-
-        lab_bill.payment_status = LabBill.PaymentStatus.PAID
-        lab_bill.payment_method = payment_serializer.validated_data["payment_method"]
-        lab_bill.save(update_fields=["payment_status", "payment_method"])
-
-        # Propagate to every LabRequest covered by this bill
-        request_ids = lab_bill.items.values_list("lab_request_id", flat=True)
-        LabRequest.objects.filter(lab_request_id__in=request_ids).update(
-            status=LabRequest.Status.PAID
-        )
-
-        return Response(LabBillSerializer(lab_bill).data)
-
-
-# ----------------------------------------------------------
-# LabResult — entered by the technician after processing
-# ----------------------------------------------------------
-class LabResultViewSet(mixins.ListModelMixin,
-                        mixins.RetrieveModelMixin,
-                        mixins.CreateModelMixin,
-                        viewsets.GenericViewSet):
-    queryset = LabResult.objects.select_related("lab_request", "lab_request__test", "technician").all()
-    permission_classes = [IsAuthenticated, IsLabTechnician]
-
-    def get_serializer_class(self):
-        if self.action == "create":
-            return LabResultCreateSerializer
-        return LabResultSerializer
-
-    def get_queryset(self):
-        return super().get_queryset().order_by("-result_date")
-
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        # The technician entering the result is always the logged-in staff member,
-        # never a value the client can supply.
-        context["technician_staff"] = self.request.user.staff
-        return context
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        lab_result = serializer.save()
-        return Response(
-            LabResultSerializer(lab_result).data,
-            status=status.HTTP_201_CREATED,
+        bill = services.create_lab_bill(
+            lab_request_ids=serializer.validated_data["lab_request_ids"]
         )
+        return Response(LabBillDetailSerializer(bill).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="mark-paid")
+    def mark_paid(self, request, pk=None):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        bill = services.mark_bill_paid(
+            bill_id=pk, payment_method=serializer.validated_data["payment_method"]
+        )
+        return Response(LabBillDetailSerializer(bill).data)
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        bill = services.cancel_bill(bill_id=pk)
+        return Response(LabBillDetailSerializer(bill).data)
+
+
+# ------------------------------------------------------------------ results
+class LabResultViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    viewsets.GenericViewSet,
+):
+    """
+    Technicians create results; technicians and the consulting doctor read them.
+    No update/delete - a result is a permanent clinical record.
+    (If the team decides results may be corrected, add an explicit,
+    audited "amend" action instead of opening PUT/PATCH.)
+    """
+    def get_permissions(self):
+        if self.action == "create":
+            return [IsLabTechnician()]
+        return [IsLabTechnicianOrDoctor()]
+
+    def get_serializer_class(self):
+        return LabResultCreateSerializer if self.action == "create" else LabResultSerializer
+
+    def get_queryset(self):
+        qs = LabResult.objects.select_related(
+            "lab_request__test", "lab_request__consultation", "technician"
+        ).order_by("-result_date")
+        qs = limit_to_own_consultations(
+            qs, self.request.user, "lab_request__consultation__doctor__staff__user"
+        )
+        return _filter_by_params(qs, self.request.query_params, {
+            "lab_request": "lab_request_id",
+            "consultation": "lab_request__consultation_id",
+            "patient": "lab_request__consultation__patient_id",
+        })
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = services.enter_result(
+            lab_request=serializer.validated_data["lab_request"],
+            technician_user=request.user,
+            data=serializer.validated_data,
+        )
+        return Response(LabResultSerializer(result).data, status=status.HTTP_201_CREATED)
