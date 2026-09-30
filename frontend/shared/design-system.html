@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Design system</title>
+  <script src="../shared/js/cms.js"></script>
+</head>
+<body data-module="shared" data-page="design-system" data-title="Design system" data-subtitle="Copy these patterns. Every module page uses the same components.">
+<main id="cms-content">
+  <div class="row g-3 mb-4" id="ds-stats"></div>
+
+  <div class="row g-4">
+    <div class="col-xl-7">
+      <div class="cms-card mb-4">
+        <h2 class="cms-card-title">Table with search <span class="cms-status cms-status--info">Live shared data</span></h2>
+        <div class="cms-toolbar"><input class="form-control cms-search" id="ds-search" placeholder="Search patients…" aria-label="Search patients">
+          <select class="form-select w-auto" id="ds-gender" aria-label="Filter by gender"><option value="">All genders</option><option value="M">Male</option><option value="F">Female</option></select></div>
+        <div class="table-responsive"><table class="table cms-table"><thead><tr><th>ID</th><th>Patient</th><th>Age</th><th>Phone</th><th>Status</th></tr></thead><tbody id="ds-rows"></tbody></table></div>
+      </div>
+      <div class="cms-card">
+        <h2 class="cms-card-title">Workflow stepper</h2>
+        <div class="cms-stepper"><span class="cms-step done"><i class="bi bi-check2"></i>Registered</span><span class="cms-step done"><i class="bi bi-check2"></i>Bill paid</span>
+          <span class="cms-step active"><i class="bi bi-ticket-perforated"></i>Token</span><span class="cms-step">Consultation</span><span class="cms-step">Pharmacy / Lab</span></div>
+      </div>
+    </div>
+    <div class="col-xl-5">
+      <div class="cms-card mb-4">
+        <h2 class="cms-card-title">Status badges</h2>
+        <div class="d-flex flex-wrap gap-2" id="ds-badges"></div>
+      </div>
+      <div class="cms-card mb-4">
+        <h2 class="cms-card-title">Form</h2>
+        <form class="cms-form row g-3"><div class="col-sm-6"><label class="form-label" for="f1">Full name</label><input id="f1" class="form-control" placeholder="Patient name"></div>
+          <div class="col-sm-6"><label class="form-label" for="f2">Payment method</label><select id="f2" class="form-select"><option>Cash</option><option>Card</option><option>UPI</option></select></div>
+          <div class="col-12 d-flex gap-2"><button type="button" class="btn btn-primary" id="ds-ok">Save changes</button><button type="button" class="btn btn-outline-primary" id="ds-err">Show a blocked-rule alert</button></div></form>
+      </div>
+      <div class="cms-card mb-4">
+        <h2 class="cms-card-title">Token queue item</h2>
+        <div class="cms-token current"><span class="cms-token-no">03</span><div class="flex-grow-1"><div class="fw-bold">Diya Thomas</div><small class="text-secondary">Morning · Dr. Ananya Nair</small></div><span class="cms-status cms-status--info">Called</span></div>
+        <div class="cms-token"><span class="cms-token-no">04</span><div class="flex-grow-1"><div class="fw-bold">Mohammed Sameer</div><small class="text-secondary">Morning · Walk-in</small></div><span class="cms-status cms-status--warning">Waiting</span></div>
+      </div>
+      <div class="cms-card"><h2 class="cms-card-title">Empty state</h2>
+        <div id="ds-empty"></div></div>
+    </div>
+  </div>
+</main>
+<script src="../shared/js/design-system.js"></script>
+</body>
+</html>
