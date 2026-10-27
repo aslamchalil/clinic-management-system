@@ -1,0 +1,8 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Clinic Management System</title>
+<script src="shared/js/cms.js"></script></head>
+<body data-public="true"><script>
+  CMS.ready(function () {
+    var s = CMSAuth.session(); location.replace(s ? CMSAuth.home(s) : "login.html");
+  });
+</script></body></html>
