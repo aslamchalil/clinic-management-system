@@ -1,0 +1,22 @@
+
+# React / Vite dependencies and build output
+cms-react/node_modules/
+cms-react/dist/
+
+# Environment variables and local secrets
+cms-react/.env
+cms-react/.env.*
+!cms-react/.env.example
+
+# Python
+cmsproj/venv/
+cmsproj/.venv/
+cmsproj/__pycache__/
+cmsproj/**/__pycache__/
+cmsproj/*.py[cod]
+cmsproj/**/migrations/__pycache__/
+
+# Local environment and database files
+cmsproj/.env
+cmsproj/.env.*
+!cmsproj/.env.example

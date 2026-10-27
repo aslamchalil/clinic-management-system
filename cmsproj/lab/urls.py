@@ -1,0 +1,59 @@
+from django.urls import path
+from .views import (
+    LabBillCreateAPIView,
+    LabBillDetailAPIView,
+    LabBillPaymentAPIView,
+    LabResultCreateAPIView,
+    LabResultListAPIView,
+    LabResultDetailAPIView,
+    MasterLabTestListAPIView,
+    LabRequestListAPIView,
+    LabRequestDetailAPIView,
+)
+urlpatterns = [
+    path(
+        "bills/<int:lab_bill_id>/",
+        LabBillDetailAPIView.as_view(),
+        name="lab-bill-detail",
+    ),
+    path(
+        "results/",
+        LabResultListAPIView.as_view(),
+        name="lab-result-list",
+    ),
+    path(
+        "results/<int:result_id>/",
+        LabResultDetailAPIView.as_view(),
+        name="lab-result-detail",
+    ),
+    path(
+        "requests/<int:lab_request_id>/result/",
+        LabResultCreateAPIView.as_view(),
+        name="lab-result-create",
+    ),
+    path(
+        "requests/<int:lab_request_id>/",
+        LabRequestDetailAPIView.as_view(),
+        name="lab-request-detail",
+    ),
+    path(
+        "tests/",
+        MasterLabTestListAPIView.as_view(),
+        name="lab-test-list",
+    ),
+    path(
+        "requests/",
+        LabRequestListAPIView.as_view(),
+        name="lab-request-list",
+    ),
+    path(
+        "bills/",
+        LabBillCreateAPIView.as_view(),
+        name="lab-bill-create",
+    ),
+    path(
+        "bills/<int:bill_id>/payment/",
+        LabBillPaymentAPIView.as_view(),
+        name="lab-bill-payment",
+    ),
+]

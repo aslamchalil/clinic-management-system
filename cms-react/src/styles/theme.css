@@ -1,0 +1,43 @@
+/* ============================================================
+   CMS DESIGN TOKENS — light + dark. PROTECTED FILE (team-owned).
+   Modules must use these variables, never raw hex colors.
+   Taken from the team's template (cms_frontend): blue #175cdd, headings #112344,
+   text #3c4049, page bg #f4f8ff, Roboto body / Montserrat headings / Lato navigation,
+   dark mode = the template's teal-black .dark-background preset.
+   ============================================================ */
+:root, [data-bs-theme="light"] {
+  --cms-primary: #175cdd; --cms-primary-dark: #1148ad; --cms-primary-soft: #e8f0ff;
+  --cms-secondary: #0f766e; --cms-success: #198754; --cms-warning: #d97706; --cms-danger: #dc3545; --cms-info: #0ea5e9;
+  --cms-bg: #f4f8ff; --cms-surface: #ffffff; --cms-surface-2: #f7f9fc; --cms-border: #e3e9f2;
+  --cms-text: #3c4049; --cms-muted: #6b7280; --cms-heading: #112344;
+  --cms-shadow: 0 6px 24px rgba(17, 35, 68, .08);
+  --cms-ok-bg: #e8f7ee; --cms-ok-fg: #147a43; --cms-warn-bg: #fff4df; --cms-warn-fg: #9a5a00;
+  --cms-bad-bg: #fdebec; --cms-bad-fg: #b42318; --cms-info-bg: #e7f5fc; --cms-info-fg: #075985;
+  --cms-neutral-bg: #eef1f5; --cms-neutral-fg: #596273;
+  --cms-radius: 12px; --cms-radius-sm: 8px; --cms-sidebar-width: 250px; --cms-topbar-height: 60px;
+}
+[data-bs-theme="dark"] {
+  /* From the team template's .dark-background preset (#021418 / #11262a) */
+  --cms-primary: #4f8bff; --cms-primary-dark: #77a5ff; --cms-primary-soft: #12304a;
+  --cms-secondary: #2dd4bf; --cms-success: #3ecf8e; --cms-warning: #fbbf5b; --cms-danger: #ff6b76; --cms-info: #38bdf8;
+  --cms-bg: #021418; --cms-surface: #11262a; --cms-surface-2: #16323a; --cms-border: #24444c;
+  --cms-text: #dbe7ea; --cms-muted: #93aab0; --cms-heading: #ffffff;
+  --cms-shadow: 0 6px 24px rgba(0, 0, 0, .40);
+  --cms-ok-bg: #123527; --cms-ok-fg: #6ee7a1; --cms-warn-bg: #3a2f10; --cms-warn-fg: #fbbf5b;
+  --cms-bad-bg: #3d1a1e; --cms-bad-fg: #ff8a92; --cms-info-bg: #0e3140; --cms-info-fg: #7dd3fc;
+  --cms-neutral-bg: #1d363d; --cms-neutral-fg: #a9c0c6;
+}
+/* Point Bootstrap at our tokens so every Bootstrap component follows the theme */
+:root, [data-bs-theme] {
+  --bs-body-bg: var(--cms-bg); --bs-body-color: var(--cms-text); --bs-border-color: var(--cms-border);
+  --bs-secondary-color: var(--cms-muted); --bs-tertiary-bg: var(--cms-surface-2); --bs-emphasis-color: var(--cms-heading);
+  --bs-link-color: var(--cms-primary); --bs-link-hover-color: var(--cms-primary-dark);
+  --bs-primary: var(--cms-primary); --bs-primary-rgb: 23, 92, 221;
+  --cms-font-body: "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif; --cms-font-heading: "Montserrat", sans-serif; --cms-font-nav: "Lato", sans-serif;
+  --bs-body-font-family: var(--cms-font-body);
+}
+body { background: var(--cms-bg); color: var(--cms-text); }
+h1, h2, h3, h4, h5, h6 { color: var(--cms-heading); font-family: var(--cms-font-heading); font-weight: 700; }
+a { color: var(--cms-primary); text-decoration: none; }
+a:hover { color: var(--cms-primary-dark); }
+:focus-visible { outline: 3px solid color-mix(in srgb, var(--cms-primary) 45%, transparent); outline-offset: 2px; }
