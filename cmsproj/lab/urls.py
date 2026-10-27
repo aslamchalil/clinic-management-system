@@ -1,35 +1,59 @@
-# lab/urls.py
-from django.urls import include, path
-from rest_framework.routers import DefaultRouter
-
+from django.urls import path
 from .views import (
-    LabBillViewSet,
-    LabRequestViewSet,
-    LabResultViewSet,
-    MasterLabTestViewSet,
+    LabBillCreateAPIView,
+    LabBillDetailAPIView,
+    LabBillPaymentAPIView,
+    LabResultCreateAPIView,
+    LabResultListAPIView,
+    LabResultDetailAPIView,
+    MasterLabTestListAPIView,
+    LabRequestListAPIView,
+    LabRequestDetailAPIView,
 )
-
-router = DefaultRouter()
-router.register(r"master-tests", MasterLabTestViewSet, basename="lab-master-tests")
-router.register(r"requests", LabRequestViewSet, basename="lab-requests")
-router.register(r"bills", LabBillViewSet, basename="lab-bills")
-router.register(r"results", LabResultViewSet, basename="lab-results")
-
-urlpatterns = [path("", include(router.urls))]
-
-# Resulting endpoints (mounted at /lab/ in the project urls.py):
-#
-# GET  /lab/master-tests/                       active tests (read-only)
-# GET  /lab/requests/                           ?status= ?priority= ?patient=
-# GET  /lab/requests/<id>/
-# POST /lab/requests/<id>/start-processing/     PAID -> IN_PROGRESS
-#
-# GET  /lab/bills/                              ?payment_status= ?patient=
-# POST /lab/bills/                              {"lab_request_ids": [1, 2]}  -> BILLED
-# GET  /lab/bills/<id>/                         bill + items
-# POST /lab/bills/<id>/mark-paid/               {"payment_method": "CASH"}   -> PAID
-# POST /lab/bills/<id>/cancel/                  unpaid only -> REQUESTED
-#
-# GET  /lab/results/                            ?lab_request= ?consultation= ?patient=
-# GET  /lab/results/<id>/
-# POST /lab/results/                            IN_PROGRESS -> COMPLETED
+urlpatterns = [
+    path(
+        "bills/<int:lab_bill_id>/",
+        LabBillDetailAPIView.as_view(),
+        name="lab-bill-detail",
+    ),
+    path(
+        "results/",
+        LabResultListAPIView.as_view(),
+        name="lab-result-list",
+    ),
+    path(
+        "results/<int:result_id>/",
+        LabResultDetailAPIView.as_view(),
+        name="lab-result-detail",
+    ),
+    path(
+        "requests/<int:lab_request_id>/result/",
+        LabResultCreateAPIView.as_view(),
+        name="lab-result-create",
+    ),
+    path(
+        "requests/<int:lab_request_id>/",
+        LabRequestDetailAPIView.as_view(),
+        name="lab-request-detail",
+    ),
+    path(
+        "tests/",
+        MasterLabTestListAPIView.as_view(),
+        name="lab-test-list",
+    ),
+    path(
+        "requests/",
+        LabRequestListAPIView.as_view(),
+        name="lab-request-list",
+    ),
+    path(
+        "bills/",
+        LabBillCreateAPIView.as_view(),
+        name="lab-bill-create",
+    ),
+    path(
+        "bills/<int:bill_id>/payment/",
+        LabBillPaymentAPIView.as_view(),
+        name="lab-bill-payment",
+    ),
+]

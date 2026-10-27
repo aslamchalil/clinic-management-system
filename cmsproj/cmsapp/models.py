@@ -409,6 +409,7 @@ class Token(models.Model):
     class StatusChoices(models.TextChoices):
         WAITING = "WAITING", "Waiting"
         CALLED = "CALLED", "Called"
+        CONSULTING = "CONSULTING","Consulting"
         COMPLETED = "COMPLETED", "Completed"
         CANCELLED = "CANCELLED", "Cancelled"
 
@@ -626,6 +627,7 @@ class PrescriptionItem(models.Model):
 
     class DispensedStatusChoices(models.TextChoices):
         PENDING = "PENDING", "Pending"
+        PARTIALLY_DISPENSED = "PARTIALLY_DISPENSED", "Partially Dispensed"
         DISPENSED = "DISPENSED", "Dispensed"
 
     prescription_item_id = models.AutoField(
@@ -656,6 +658,14 @@ class PrescriptionItem(models.Model):
 
     duration = models.CharField(
         max_length=100
+    )
+
+    prescribed_quantity = models.PositiveIntegerField(
+        default=1
+    )
+
+    dispensed_quantity = models.PositiveIntegerField(
+        default=0
     )
 
     instructions = models.TextField(
@@ -792,6 +802,15 @@ class PharmacyBillItem(models.Model):
     medicine = models.ForeignKey(
         MasterMedicine,
         on_delete=models.PROTECT,
+        related_name="pharmacy_bill_items"
+    )
+
+     # Link to the specific item prescribed by the doctor
+    prescription_item = models.ForeignKey(
+        PrescriptionItem,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="pharmacy_bill_items"
     )
 
