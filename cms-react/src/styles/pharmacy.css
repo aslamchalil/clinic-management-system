@@ -1,0 +1,19 @@
+.pharmacy-page > .cms-card { margin-bottom: 1rem; }
+.pharmacy-stat { min-height: 135px; border: 1px solid var(--bs-border-color); border-radius: 1rem; padding: 1rem; background: var(--bs-body-bg); }
+.pharmacy-stat strong { display: block; margin-top: .35rem; color: var(--bs-primary); font-size: 1.8rem; }
+.pharmacy-stat span { color: var(--bs-secondary-color); }
+.pharmacy-quick-actions { display: flex; flex-wrap: wrap; gap: .55rem; }
+.pharmacy-search-results { border-top: 1px solid var(--bs-border-color); margin-top: .75rem; }
+.pharmacy-search-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .75rem 0; border-bottom: 1px solid var(--bs-border-color); }
+.pharmacy-bill-form-row { display: grid; grid-template-columns: minmax(10rem, 1fr) 8rem 8rem; gap: .8rem; align-items: center; padding: .75rem 0; border-bottom: 1px solid var(--bs-border-color); }
+.pharmacy-receipt-backdrop { position: fixed; inset: 0; z-index: 1100; display: grid; place-items: center; padding: 1rem; overflow-y: auto; background: rgba(15, 23, 42, .55); }
+.pharmacy-receipt { width: min(820px, 100%); padding: 1.5rem; border-radius: .75rem; background: var(--bs-body-bg); }
+.pharmacy-receipt-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-bottom: 1rem; }
+.pharmacy-low-stock { color: var(--bs-danger); font-weight: 600; }
+@media (max-width: 650px) { .pharmacy-bill-form-row { grid-template-columns: 1fr 5rem 6rem; gap: .5rem; } .pharmacy-search-row { align-items: flex-start; flex-direction: column; } }
+@media print {
+  body * { visibility: hidden !important; }
+  .pharmacy-receipt, .pharmacy-receipt * { visibility: visible !important; }
+  .pharmacy-receipt { position: absolute; inset: 0; width: 100%; box-shadow: none; }
+  .pharmacy-receipt-actions, .cms-topbar, .cms-sidebar, .cms-page-header, .cms-footer { display: none !important; }
+}

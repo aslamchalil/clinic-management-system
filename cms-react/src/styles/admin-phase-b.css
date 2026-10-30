@@ -1,0 +1,40 @@
+.admin-phase-b > .card {
+  margin-bottom: 1rem;
+}
+
+.admin-billing-summary {
+  height: 100%;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.85rem;
+  background: var(--bs-body-bg);
+  box-shadow: 0 0.25rem 0.8rem rgba(18, 48, 91, 0.05);
+}
+
+.admin-billing-summary-title {
+  color: var(--bs-secondary-color);
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin-bottom: 0.7rem;
+}
+
+.admin-billing-stat {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.28rem 0;
+  font-size: 0.82rem;
+}
+
+.admin-billing-stat strong {
+  color: var(--bs-emphasis-color);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 575.98px) {
+  .admin-phase-b .cms-toolbar {
+    align-items: stretch;
+    gap: 0.6rem;
+  }
+}

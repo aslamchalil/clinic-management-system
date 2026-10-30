@@ -11,12 +11,25 @@ from .views import (
     LabRequestCreateAPIView,
     LabRequestListAPIView,
     LabRequestDetailAPIView,
+    DoctorDashboardAPIView,
+    DoctorPatientSearchAPIView,
+    DoctorConsultationHistoryAPIView,
+    DoctorConsultationDetailAPIView,
+    DoctorMedicineListAPIView,
+    DoctorDosageListAPIView,
+    DoctorLabTestListAPIView,
 )
 
 from .views import ConsultationFinalizeAPIView,DoctorCallNextTokenAPIView
 
 
 urlpatterns = [
+    path("dashboard/", DoctorDashboardAPIView.as_view(), name="doctor-dashboard"),
+    path("patients/search/", DoctorPatientSearchAPIView.as_view(), name="doctor-patient-search"),
+    path("consultations/history/", DoctorConsultationHistoryAPIView.as_view(), name="doctor-consultation-history"),
+    path("medicines/", DoctorMedicineListAPIView.as_view(), name="doctor-medicines"),
+    path("dosages/", DoctorDosageListAPIView.as_view(), name="doctor-dosages"),
+    path("lab-tests/", DoctorLabTestListAPIView.as_view(), name="doctor-lab-tests"),
     path("queue/", DoctorQueueAPIView.as_view(), name="doctor-queue"),
     path(
         "appointments/today/",
@@ -34,6 +47,11 @@ urlpatterns = [
         "prescription-items/",
         PrescriptionItemCreateAPIView.as_view(),
         name="prescription-item-create",
+    ),
+    path(
+        "consultations/<int:consultation_id>/",
+        DoctorConsultationDetailAPIView.as_view(),
+        name="doctor-consultation-detail",
     ),
     path(
         "prescriptions/<int:prescription_id>/",

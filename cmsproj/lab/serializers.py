@@ -7,6 +7,7 @@ from cmsapp.models import (
     LabRequest,
     LabResult,
     MasterLabTest,
+    Patient,
 )
 
 
@@ -27,6 +28,13 @@ class MasterLabTestSerializer(serializers.ModelSerializer):
             "max_value",
             "is_active",
         ]
+        read_only_fields = fields
+
+
+class LabPatientSearchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Patient
+        fields = ["patient_id", "full_name", "phone_number"]
         read_only_fields = fields
 
 
@@ -145,6 +153,22 @@ class LabBillPaymentSerializer(serializers.Serializer):
 # ============================================================
 
 class LabResultSerializer(serializers.ModelSerializer):
+    consultation = serializers.IntegerField(
+        source="lab_request.consultation_id",
+        read_only=True,
+    )
+    patient_id = serializers.IntegerField(
+        source="lab_request.consultation.patient_id",
+        read_only=True,
+    )
+    patient_name = serializers.CharField(
+        source="lab_request.consultation.patient.full_name",
+        read_only=True,
+    )
+    doctor_name = serializers.CharField(
+        source="lab_request.consultation.doctor",
+        read_only=True,
+    )
     test_name = serializers.CharField(
         source="lab_request.test.test_name",
         read_only=True,
@@ -159,6 +183,10 @@ class LabResultSerializer(serializers.ModelSerializer):
         fields = [
             "result_id",
             "lab_request",
+            "consultation",
+            "patient_id",
+            "patient_name",
+            "doctor_name",
             "test_name",
             "technician",
             "technician_name",

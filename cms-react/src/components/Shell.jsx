@@ -13,8 +13,9 @@ export const roleMeta = {
       ['Departments', 'diagram-3', 'departments'],
       ['Specializations', 'mortarboard', 'specializations'],
       ['Medicines', 'capsule', 'medicines'],
+      ['Pharmacy Stock', 'box-seam', 'stock'],
       ['Lab Tests', 'clipboard2-pulse', 'lab-tests'],
-      ['Activity & Sessions', 'activity', 'activity'],
+      ['Stock Requests', 'boxes', 'stock-requests'],
     ],
   },
   RECEPTIONIST: {
@@ -50,6 +51,7 @@ export const roleMeta = {
       ['Dashboard', 'speedometer2', 'dashboard'],
       ['Prescriptions', 'prescription2', 'prescriptions'],
       ['Stock', 'box-seam', 'stock'],
+      ['Stock Requests', 'boxes', 'stock-requests'],
       ['Billing', 'receipt', 'billing'],
       ['Dispensing', 'bag-check', 'dispensing'],
     ],
@@ -63,7 +65,7 @@ export const roleMeta = {
       ['Billing', 'receipt', 'billing'],
       ['Processing', 'hourglass-split', 'processing'],
       ['Results', 'file-earmark-medical', 'results'],
-      ['Consumables', 'boxes', 'inventory'],
+      ['Stock Requests', 'boxes', 'stock-requests'],
     ],
   },
 };
@@ -74,8 +76,8 @@ export const titles = {
   doctors: 'Doctors',
   departments: 'Departments',
   medicines: 'Medicines',
+  'stock-requests': 'Stock Requests',
   'lab-tests': 'Lab Tests',
-  activity: 'Activity & Login Sessions',
   patients: 'Patients',
   'patient-register': 'Register Patient',
   appointments: 'Appointments',
@@ -92,7 +94,6 @@ export const titles = {
   results: 'Lab Results',
   stock: 'Medicine Stock',
   dispensing: 'Dispensing',
-  inventory: 'Lab Consumables',
 };
 
 function normalizeRole(role) {
@@ -213,9 +214,7 @@ export function Shell({ user, children, page }) {
             <div>
               <div className="eyebrow">{meta.label} / WORKSPACE</div>
               <h1 className="cms-page-title">{title}</h1>
-              <p className="cms-page-subtitle">
-                {page === 'activity' ? 'Review sign-in periods and recent staff activity.' : 'A clear view of today’s clinic operations.'}
-              </p>
+              <p className="cms-page-subtitle">A clear view of today’s clinic operations.</p>
             </div>
             <div className="page-header-date">
               <i className="bi bi-calendar3 me-2" />

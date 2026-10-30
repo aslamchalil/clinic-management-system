@@ -2,7 +2,5 @@
 .dashboard-search-results { border: 1px solid var(--cms-border); border-radius: var(--cms-radius-sm); overflow: hidden; }
 .dashboard-patient-result { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 14px; border-bottom: 1px solid var(--cms-border); }
 .dashboard-patient-result:last-child { border-bottom: 0; }
-.dashboard-action { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 14px; border: 1px solid var(--cms-border); border-radius: var(--cms-radius-sm); color: var(--cms-text); text-decoration: none; font-weight: 700; }
-.dashboard-action > i:first-child { color: var(--cms-primary); font-size: 20px; }
-.dashboard-action:hover { background: var(--cms-primary-soft); color: var(--cms-primary); }
+.dashboard-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 @media (max-width: 575.98px) { .dashboard-patient-result { align-items: flex-start; flex-direction: column; } }

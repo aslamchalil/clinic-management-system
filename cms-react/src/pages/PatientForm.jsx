@@ -237,6 +237,12 @@ export default function PatientForm({ patient = null, standalone = false, onCanc
                   state: {
                     patientId: createdPatient.patient_id,
                     patient: createdPatient,
+                    workflow: {
+                      patientId: createdPatient.patient_id,
+                      patientName: createdPatient.full_name,
+                      isNewRegistration: true,
+                      followUp: 'APPOINTMENT',
+                    },
                   },
                 })}
               >
@@ -250,17 +256,32 @@ export default function PatientForm({ patient = null, standalone = false, onCanc
                     patientId: createdPatient.patient_id,
                     patientName: createdPatient.full_name,
                     isNewRegistration: true,
+                    workflow: {
+                      patientId: createdPatient.patient_id,
+                      patientName: createdPatient.full_name,
+                      isNewRegistration: true,
+                      followUp: 'WALK_IN',
+                    },
                   },
                 })}
               >
-                Generate Token
+                Walk-in token
               </button>
               <button
                 type="button"
                 className="btn btn-outline-secondary"
-                onClick={() => navigate('/app/receptionist/patients')}
+                onClick={() => navigate('/app/receptionist/billing', {
+                  state: {
+                    workflow: {
+                      patientId: createdPatient.patient_id,
+                      patientName: createdPatient.full_name,
+                      isNewRegistration: true,
+                      followUp: 'NONE',
+                    },
+                  },
+                })}
               >
-                Back to Patients
+                Neither, continue to billing
               </button>
             </div>
           </Card>

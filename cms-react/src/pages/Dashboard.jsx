@@ -17,13 +17,26 @@ const localDate = () => {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
-const personName = (person) => [person?.first_name, person?.last_name].filter(Boolean).join(' ').trim();
+function clinicDate(value) {
+  if (!value) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return String(value);
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+function relatedId(value) {
+  if (value && typeof value === 'object') {
+    return value.patient_id ?? value.appointment_id ?? value.doc_id ?? value.doctor_id ?? value.id;
+  }
+  return value;
+}
 const patientFields = (patient) => [patient?.patient_id, patient?.full_name, patient?.phone_number].filter((value) => value !== null && value !== undefined).join(' ').toLowerCase();
 
 function ReceptionistDashboard() {
   const [records, setRecords] = useState({ patients: [], appointments: [], tokens: [], bills: [] });
   const [states, setStates] = useState({});
   const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(true);
   const today = localDate();
 
   useEffect(() => {
@@ -37,6 +50,7 @@ function ReceptionistDashboard() {
       const result = Object.fromEntries(items);
       setRecords((current) => Object.fromEntries(Object.entries(result).map(([key, value]) => [key, value.data || current[key]])));
       setStates(Object.fromEntries(items.map(([key, value]) => [key, value.error || ''])));
+      setLoading(false);
     });
     return () => { live = false; };
   }, []);
@@ -47,39 +61,52 @@ function ReceptionistDashboard() {
     return records.patients.filter((patient) => patientFields(patient).includes(term)).slice(0, 8);
   }, [records.patients, query]);
   const todayAppointments = useMemo(() => records.appointments
-    .filter((appointment) => String(appointment.appointment_date || '').slice(0, 10) === today)
+    .filter((appointment) => clinicDate(appointment.appointment_date) === today)
     .sort((a, b) => String(a.appointment_time_slot || '').localeCompare(String(b.appointment_time_slot || ''))), [records.appointments, today]);
+  const bookedTodayCount = records.appointments.filter((appointment) =>
+    clinicDate(appointment.appointment_date) === today && appointment.status === 'BOOKED'
+  ).length;
+  const billsTodayCount = records.bills.filter((bill) => clinicDate(bill.bill_date) === today).length;
+  const tokensTodayCount = records.tokens.filter((token) =>
+    clinicDate(token.token_date) === today && String(token.status || '').toUpperCase() !== 'CANCELLED'
+  ).length;
   const patientsById = useMemo(() => new Map(records.patients.map((p) => [String(p.patient_id), p])), [records.patients]);
-  const tokensByAppointment = useMemo(() => new Map(records.tokens.filter((token) => token.appointment != null).map((token) => [String(token.appointment), token])), [records.tokens]);
+  const tokensByAppointment = useMemo(() => new Map(records.tokens
+    .filter((token) => token.appointment != null && String(token.status || '').toUpperCase() !== 'CANCELLED')
+    .map((token) => [String(relatedId(token.appointment)), token])), [records.tokens]);
 
   const cards = [
-    ['Patients', 'people', 'patients'], ['Appointments', 'calendar-check', 'appointments'],
-    ['Tokens', 'ticket-perforated', 'tokens'], ['Bills', 'receipt', 'bills'],
+    ['Patients', 'people', 'patients', (data) => data.patients.length],
+    ['Booked today', 'calendar-check', 'appointments', () => bookedTodayCount],
+    ['Bills today', 'receipt', 'bills', () => billsTodayCount],
+    ['Tokens today', 'ticket-perforated', 'tokens', () => tokensTodayCount],
   ];
   return <div className="workspace-content">
     {Object.entries(states).filter(([, message]) => message).map(([key, message]) => <div className="alert alert-warning" role="alert" key={key}>Could not load {key}: {message}</div>)}
-    <div className="row g-3 mb-3">{cards.map(([label, icon, key]) => <div className="col-6 col-xl-3" key={key}><Stat label={label} icon={icon} value={states[key] ? 'Unavailable' : records[key].length} /></div>)}</div>
+    {loading ? <div className="loading-line"><span />Loading today’s receptionist dashboard…</div> : <div className="row g-3 mb-3">{cards.map(([label, icon, key, count]) => <div className="col-6 col-xl-3" key={key}><Stat label={label} icon={icon} value={states[key] ? 'Unavailable' : count(records)} /></div>)}</div>}
 
     <Card title="Patient search" subtitle="Search live patient records by patient ID, name, or phone number">
       <div className="search-box dashboard-patient-search"><i className="bi bi-search"/><input className="form-control" aria-label="Search patients" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Enter patient ID, name, or phone number"/></div>
-      {states.patients ? <Empty title="Patient search unavailable" description={states.patients}/> : query.trim() ? matches.length ? <div className="dashboard-search-results">{matches.map((patient) => <div className="dashboard-patient-result" key={patient.patient_id}><div><strong>{patient.full_name || 'Name unavailable'}</strong><div className="small text-secondary">Patient #{patient.patient_id}{patient.phone_number ? ` · ${patient.phone_number}` : ''}</div></div><div className="d-flex gap-2 flex-wrap"><Link className="btn btn-sm btn-outline-primary" to="/app/receptionist/appointments" state={{ patientId: patient.patient_id }}>Appointment</Link><Link className="btn btn-sm btn-outline-primary" to="/app/receptionist/tokens" state={{ patientId: patient.patient_id, patientName: patient.full_name, isNewRegistration: false }}>Token Queue</Link></div></div>)}</div> : <p className="small text-secondary mb-0">No matching patients.</p> : <p className="small text-secondary mb-0">Start typing to search the patient list.</p>}
+      {loading ? <div className="loading-line"><span />Loading patients…</div> : states.patients ? <Empty title="Patient search unavailable" description={states.patients}/> : query.trim() ? matches.length ? <div className="dashboard-search-results">{matches.map((patient) => <div className="dashboard-patient-result" key={patient.patient_id}><div><strong>{patient.full_name || 'Name unavailable'}</strong><div className="small text-secondary">Patient #{patient.patient_id}{patient.phone_number ? ` · ${patient.phone_number}` : ''}</div></div><div className="d-flex gap-2 flex-wrap"><Link className="btn btn-sm btn-outline-primary" to="/app/receptionist/appointments" state={{ patientId: patient.patient_id }}>Appointment</Link><Link className="btn btn-sm btn-outline-primary" to="/app/receptionist/tokens" state={{ patientId: patient.patient_id, patientName: patient.full_name, isNewRegistration: false }}>Token Queue</Link></div></div>)}</div> : <p className="small text-secondary mb-0">No matching patients.</p> : <p className="small text-secondary mb-0">Start typing to search the patient list.</p>}
     </Card>
 
     <Card title="Quick actions" subtitle="Open a receptionist workflow">
-      <div className="row g-3">{[
-        ['Register Patient', 'person-plus', '/app/receptionist/patient-register'],
-        ['Appointments', 'calendar-check', '/app/receptionist/appointments'],
-        ['Billing', 'receipt', '/app/receptionist/billing'],
-        ['Token Queue', 'ticket-perforated', '/app/receptionist/tokens'],
-      ].map(([label, icon, to]) => <div className="col-6 col-xl-3" key={label}><Link className="dashboard-action" to={to}><i className={`bi bi-${icon}`}/><span>{label}</span><i className="bi bi-arrow-right ms-auto"/></Link></div>)}</div>
+      <div className="dashboard-actions">{[
+        ['Register Patient', 'person-plus', '/app/receptionist/patient-register', 'btn-primary'],
+        ['Appointments', 'calendar-check', '/app/receptionist/appointments', 'btn-outline-primary'],
+        ['Billing', 'receipt', '/app/receptionist/billing', 'btn-outline-primary'],
+        ['Token Queue', 'ticket-perforated', '/app/receptionist/tokens', 'btn-outline-primary'],
+      ].map(([label, icon, to, style]) => <Link className={`btn ${style}`} to={to} key={label}><i className={`bi bi-${icon} me-1`}/>{label}</Link>)}</div>
     </Card>
 
     <Card title="Today's appointments" subtitle="Appointments scheduled for the clinic's local date, ordered by time">
-      {states.appointments ? <Empty title="Appointments unavailable" description={states.appointments}/> : <div className="table-responsive"><table className="table cms-table align-middle"><thead><tr><th>Time</th><th>Patient</th><th>Doctor</th><th>Status</th><th>Token</th><th>Action</th></tr></thead><tbody>
+      {loading ? <div className="loading-line"><span />Loading appointments…</div> : states.appointments ? <Empty title="Appointments unavailable" description={states.appointments}/> : <div className="table-responsive"><table className="table cms-table align-middle"><thead><tr><th>Time</th><th>Patient</th><th>Doctor</th><th>Status</th><th>Token</th><th>Action</th></tr></thead><tbody>
         {todayAppointments.length ? todayAppointments.map((appointment) => {
-          const patient = patientsById.get(String(appointment.patient));
+          const patient = patientsById.get(String(relatedId(appointment.patient)));
           const token = tokensByAppointment.get(String(appointment.appointment_id));
-          return <tr key={appointment.appointment_id}><td>{String(appointment.appointment_time_slot || '—').slice(0, 5)}</td><td>{patient?.full_name || `Patient #${appointment.patient}`}</td><td>Doctor #{appointment.doctor}</td><td><Status value={appointment.status}/></td><td>{token?.token_number ?? '—'}</td><td>—</td></tr>;
+          const patientId = relatedId(appointment.patient);
+          const doctorId = relatedId(appointment.doctor);
+          return <tr key={appointment.appointment_id}><td>{String(appointment.appointment_time_slot || '—').slice(0, 5)}</td><td>{patient?.full_name || `Patient #${patientId}`}</td><td>Doctor #{doctorId}</td><td><Status value={appointment.status}/></td><td>{token?.token_number ?? '—'}</td><td>—</td></tr>;
         }) : <tr><td colSpan="6"><Empty title="No appointments today" description="There are no appointments scheduled for today."/></td></tr>}
       </tbody></table></div>}
     </Card>

@@ -213,6 +213,11 @@ class DoctorSession(models.Model):
 
 class Patient(models.Model):
 
+    class RegistrationFeeStatusChoices(models.TextChoices):
+        ELIGIBLE = "ELIGIBLE", "Eligible"
+        ASSESSED = "ASSESSED", "Assessed"
+        REVIEW = "REVIEW", "Needs review"
+
     patient_id = models.AutoField(primary_key=True)
 
     full_name = models.CharField(
@@ -254,6 +259,12 @@ class Patient(models.Model):
 
     is_active = models.BooleanField(
         default=True
+    )
+
+    registration_fee_status = models.CharField(
+        max_length=10,
+        choices=RegistrationFeeStatusChoices.choices,
+        default=RegistrationFeeStatusChoices.REVIEW,
     )
 
     created_at = models.DateTimeField(
@@ -358,6 +369,20 @@ class RegistrationBill(models.Model):
         Doctor,
         on_delete=models.PROTECT,
         related_name="registration_bills"
+    )
+
+    appointment = models.OneToOneField(
+        Appointment,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="registration_bill",
+    )
+
+    visit_key = models.UUIDField(
+        null=True,
+        blank=True,
+        unique=True,
     )
 
     registration_fee = models.DecimalField(
@@ -726,6 +751,53 @@ class PharmacyStock(models.Model):
         return f"{self.medicine} - Stock: {self.quantity}"
 
 
+class StockRequest(models.Model):
+    class DepartmentChoices(models.TextChoices):
+        PHARMACY = "PHARMACY", "Pharmacy"
+        LABORATORY = "LABORATORY", "Laboratory"
+
+    class StatusChoices(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        APPROVED = "APPROVED", "Approved"
+        REJECTED = "REJECTED", "Rejected"
+
+    request_id = models.AutoField(primary_key=True)
+    department = models.CharField(max_length=20, choices=DepartmentChoices.choices)
+    item_name = models.CharField(max_length=200)
+    medicine = models.ForeignKey(
+        MasterMedicine,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="stock_requests",
+    )
+    requested_quantity = models.PositiveIntegerField()
+    approved_quantity = models.PositiveIntegerField(null=True, blank=True)
+    reason = models.TextField()
+    status = models.CharField(
+        max_length=20,
+        choices=StatusChoices.choices,
+        default=StatusChoices.PENDING,
+    )
+    requested_by = models.ForeignKey(
+        Staff, on_delete=models.PROTECT, related_name="stock_requests_submitted"
+    )
+    reviewed_by = models.ForeignKey(
+        Staff,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="stock_requests_reviewed",
+    )
+    review_note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.department} stock request #{self.request_id}"
+
+
 # ============================================================
 # 17. PHARMACY BILL
 # ============================================================
@@ -777,6 +849,11 @@ class PharmacyBill(models.Model):
         max_length=20,
         choices=PaymentMethodChoices.choices,
         blank=True
+    )
+
+    dispensed_at = models.DateTimeField(
+        null=True,
+        blank=True,
     )
 
     def __str__(self):

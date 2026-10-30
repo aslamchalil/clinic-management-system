@@ -8,9 +8,15 @@ from .views import (
     PharmacyStockDetailAPIView,
     PharmacyBillAPIView,
     PharmacyBillPaymentAPIView,
+    PharmacyBillDispenseAPIView,
+    PharmacyDashboardAPIView,
+    PharmacyPatientSearchAPIView,
 )
 
 urlpatterns = [
+    path("dashboard/", PharmacyDashboardAPIView.as_view(), name="pharmacy-dashboard"),
+    path("patients/search/", PharmacyPatientSearchAPIView.as_view(), name="pharmacy-patient-search"),
+    path("bills/<int:bill_id>/dispense/", PharmacyBillDispenseAPIView.as_view(), name="pharmacy-bill-dispense"),
 
     path(
         "bills/<int:bill_id>/payment/",

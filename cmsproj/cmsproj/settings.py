@@ -10,7 +10,10 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import os
 from pathlib import Path
+
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,7 +23,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-_8qf&f%q5r7qn)w@7s0vrq(!9!h8e!^ig^oyclr3s!-zekb7^a'
+def _required_environment_variable(name):
+    value = os.environ.get(name)
+    if not value:
+        raise ImproperlyConfigured(f"Required environment variable {name} is not set.")
+    return value
+
+
+SECRET_KEY = _required_environment_variable("DJANGO_SECRET_KEY")
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
@@ -95,8 +105,8 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'cmsproj',
-        'USER': 'root',
-        'PASSWORD': '12345',
+        'USER': _required_environment_variable('DB_USER'),
+        'PASSWORD': _required_environment_variable('DB_PASSWORD'),
         'HOST': 'localhost',
         'PORT': '3306',
     }
@@ -161,4 +171,6 @@ REST_FRAMEWORK = {
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
 ]

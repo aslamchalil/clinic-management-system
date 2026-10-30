@@ -1,3 +1,4 @@
+import re
 
 from rest_framework import serializers
 from cmsapp.models import (
@@ -10,13 +11,43 @@ from cmsapp.models import (
     Dosage,
     LabRequest,
     Appointment,
+    MasterLabTest,
 )
+
+
+class DoctorTokenSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Token
+        fields = ["token_id", "token_number", "token_date", "session", "status"]
+        read_only_fields = fields
+
+
+class DoctorMedicineSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MasterMedicine
+        fields = ["medicine_id", "name", "generic_name", "category"]
+        read_only_fields = fields
+
+
+class DoctorDosageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Dosage
+        fields = ["dosage_id", "medicine", "dosage_value", "unit", "description"]
+        read_only_fields = fields
+
+
+class DoctorLabTestSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MasterLabTest
+        fields = ["test_id", "test_name", "test_type", "description", "test_price"]
+        read_only_fields = fields
 
 class DoctorTodayAppointmentSerializer(serializers.ModelSerializer):
     patient_name = serializers.CharField(
         source="patient.full_name",
         read_only=True,
     )
+    tokens = DoctorTokenSummarySerializer(many=True, read_only=True)
 
     class Meta:
         model = Appointment
@@ -28,6 +59,7 @@ class DoctorTodayAppointmentSerializer(serializers.ModelSerializer):
             "appointment_date",
             "appointment_time_slot",
             "status",
+            "tokens",
         ]
         read_only_fields = fields
 
@@ -36,6 +68,13 @@ class DoctorQueueSerializer(serializers.ModelSerializer):
         source="patient.full_name",
         read_only=True
     )
+    bill_payment_status = serializers.CharField(source="bill.payment_status", read_only=True)
+    appointment_id = serializers.IntegerField(read_only=True, allow_null=True)
+    consultation_id = serializers.SerializerMethodField()
+
+    def get_consultation_id(self, token):
+        consultation = getattr(token, "consultation", None)
+        return consultation.consult_id if consultation else None
 
     class Meta:
         model = Token
@@ -47,6 +86,9 @@ class DoctorQueueSerializer(serializers.ModelSerializer):
             "token_date",
             "session",
             "status",
+            "bill_payment_status",
+            "appointment_id",
+            "consultation_id",
         ]
 
 class PatientDetailsSerializer(serializers.ModelSerializer):
@@ -65,6 +107,13 @@ class PatientDetailsSerializer(serializers.ModelSerializer):
             "is_active",
             "created_at",
         ]
+        read_only_fields = fields
+
+
+class DoctorPatientSearchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Patient
+        fields = ["patient_id", "full_name", "phone_number"]
         read_only_fields = fields
 
 
@@ -109,6 +158,28 @@ class ConsultationSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
+class DoctorConsultationSerializer(serializers.ModelSerializer):
+    patient_name = serializers.CharField(source="patient.full_name", read_only=True)
+    token_number = serializers.IntegerField(source="token.token_number", read_only=True)
+    token_date = serializers.DateField(source="token.token_date", read_only=True)
+    session = serializers.CharField(source="token.session", read_only=True)
+    token_status = serializers.CharField(source="token.status", read_only=True)
+    prescription_id = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Consultation
+        fields = [
+            "consult_id", "patient", "patient_name", "doctor", "token",
+            "token_number", "token_date", "session", "token_status",
+            "symptoms", "diagnosis", "remarks", "created_at", "prescription_id",
+        ]
+        read_only_fields = fields
+
+    def get_prescription_id(self, consultation):
+        prescription = getattr(consultation, "prescription", None)
+        return prescription.prescription_id if prescription else None
+
+
 
 class PrescriptionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -135,6 +206,16 @@ class PrescriptionSerializer(serializers.ModelSerializer):
             )
 
         return consultation
+
+
+def calculate_prescription_quantity(frequency, duration):
+    frequency_match = re.fullmatch(r"\s*([1-4])\s+times?\s+per\s+day\s*", frequency or "", re.IGNORECASE)
+    if not frequency_match:
+        raise serializers.ValidationError({"frequency": "Choose a supported frequency from 1 to 4 times per day."})
+    duration_match = re.fullmatch(r"\s*([1-9]\d{0,2})\s+days?\s*", duration or "", re.IGNORECASE)
+    if not duration_match or int(duration_match.group(1)) > 365:
+        raise serializers.ValidationError({"duration": "Enter a duration from 1 to 365 days."})
+    return int(frequency_match.group(1)) * int(duration_match.group(1))
 
 
 class PrescriptionItemSerializer(serializers.ModelSerializer):
@@ -184,6 +265,13 @@ class PrescriptionItemSerializer(serializers.ModelSerializer):
         medicine = attrs["medicine"]
         dosage = attrs["dosage"]
         prescription = attrs["prescription"]
+        expected_quantity = calculate_prescription_quantity(
+            attrs.get("frequency"), attrs.get("duration")
+        )
+        if attrs["prescribed_quantity"] != expected_quantity:
+            raise serializers.ValidationError({
+                "prescribed_quantity": f"Quantity must equal frequency per day × duration ({expected_quantity})."
+            })
 
         if not medicine.is_active:
             raise serializers.ValidationError(
@@ -219,6 +307,9 @@ class PrescriptionItemSerializer(serializers.ModelSerializer):
 
 
 class PrescriptionDetailSerializer(serializers.ModelSerializer):
+    patient_id = serializers.IntegerField(source="consultation.patient_id", read_only=True)
+    patient_name = serializers.CharField(source="consultation.patient.full_name", read_only=True)
+    doctor_name = serializers.CharField(source="consultation.doctor", read_only=True)
     items = PrescriptionItemSerializer(
         many=True,
         read_only=True
@@ -230,6 +321,9 @@ class PrescriptionDetailSerializer(serializers.ModelSerializer):
             "prescription_id",
             "consultation",
             "created_at",
+            "patient_id",
+            "patient_name",
+            "doctor_name",
             "items",
         ]
         read_only_fields = fields
@@ -237,6 +331,8 @@ class PrescriptionDetailSerializer(serializers.ModelSerializer):
 
 
 class LabRequestSerializer(serializers.ModelSerializer):
+    patient_id = serializers.IntegerField(source="consultation.patient_id", read_only=True)
+    patient_name = serializers.CharField(source="consultation.patient.full_name", read_only=True)
     test_name = serializers.CharField(
         source="test.test_name",
         read_only=True,
@@ -247,6 +343,8 @@ class LabRequestSerializer(serializers.ModelSerializer):
         fields = [
             "lab_request_id",
             "consultation",
+            "patient_id",
+            "patient_name",
             "test",
             "test_name",
             "order_date",

@@ -2,7 +2,14 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api, errorMessage } from '../services/api';
 import { Card, Empty, Search, Status } from '../components/UI';
-import { listAppointments, listPatients } from '../services/receptionistService';
+import {
+  createRegistrationBill,
+  listAppointments,
+  listDoctors,
+  listPatients,
+} from '../services/receptionistService';
+import DoctorSelect from '../components/DoctorSelect';
+import { maximumTokenDate } from '../services/dateUtils';
 
 function localDate() {
   const date = new Date();
@@ -27,6 +34,7 @@ export default function AppointmentForm() {
   const navigate = useNavigate();
   const [patients, setPatients] = useState([]);
   const [appointments, setAppointments] = useState([]);
+  const [doctors, setDoctors] = useState([]);
   const [appointmentQuery, setAppointmentQuery] = useState('');
   const [form, setForm] = useState({
     patient: location.state?.patientId ? String(location.state.patientId) : '',
@@ -38,6 +46,8 @@ export default function AppointmentForm() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [appointmentListError, setAppointmentListError] = useState('');
+  const [doctorError, setDoctorError] = useState('');
+  const [appointmentCreated, setAppointmentCreated] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
 
@@ -45,9 +55,11 @@ export default function AppointmentForm() {
     setLoading(true);
     setError('');
     setAppointmentListError('');
-    const [patientResult, appointmentResult] = await Promise.allSettled([
+    setDoctorError('');
+    const [patientResult, appointmentResult, doctorResult] = await Promise.allSettled([
       listPatients(),
       listAppointments(),
+      listDoctors(),
     ]);
 
     if (patientResult.status === 'fulfilled') {
@@ -60,6 +72,11 @@ export default function AppointmentForm() {
       setAppointments(appointmentResult.value);
     } else {
       setAppointmentListError(errorMessage(appointmentResult.reason));
+    }
+    if (doctorResult.status === 'fulfilled') {
+      setDoctors(doctorResult.value);
+    } else {
+      setDoctorError(errorMessage(doctorResult.reason));
     }
     setLoading(false);
   };
@@ -108,11 +125,11 @@ export default function AppointmentForm() {
     const doctorId = Number(form.doctor);
     const advanceAmount = Number(form.advance_amount);
     if (!form.patient) errors.patient = 'Select a patient.';
-    if (!Number.isInteger(doctorId) || doctorId <= 0) {
-      errors.doctor = 'Enter a valid Doctor ID.';
+    if (!doctors.some((doctor) => Number(doctor.doc_id) === doctorId)) {
+      errors.doctor = 'Select an active doctor from the list.';
     }
-    if (!validDate(form.appointment_date) || form.appointment_date < localDate()) {
-      errors.appointment_date = 'Choose a valid date that is not in the past.';
+    if (!validDate(form.appointment_date) || form.appointment_date < localDate() || form.appointment_date > maximumTokenDate()) {
+      errors.appointment_date = `Choose a valid date from today through ${maximumTokenDate()}.`;
     }
     const [hour, minute] = form.appointment_time_slot.split(':').map(Number);
     if (
@@ -131,6 +148,7 @@ export default function AppointmentForm() {
     setSubmitting(true);
     setError('');
     try {
+      let appointment = appointmentCreated;
       const payload = {
         patient: Number(form.patient),
         doctor: doctorId,
@@ -138,25 +156,37 @@ export default function AppointmentForm() {
         appointment_time_slot: form.appointment_time_slot,
         advance_amount: form.advance_amount.trim() || '0',
       };
-      const response = await api.post('/receptionist/appointments/', payload);
-      const appointment = response.data;
+      if (!appointment) {
+        const response = await api.post('/receptionist/appointments/', payload);
+        appointment = response.data;
+        setAppointmentCreated(appointment);
+      }
       if (!appointment?.appointment_id) {
         throw new Error('The appointment API did not return an appointment ID.');
       }
 
       const patientId = appointment.patient ?? payload.patient;
       const linkedPatient = patientMap.get(String(patientId));
+      const doctorIdForBill = appointment.doctor ?? payload.doctor;
+      const bill = await createRegistrationBill({
+        patient: Number(patientId),
+        doctor: Number(doctorIdForBill),
+        appointment: appointment.appointment_id,
+      });
       navigate('/app/receptionist/billing', {
         state: {
           workflow: {
+            billId: bill.bill_id,
             appointmentId: appointment.appointment_id,
             patientId,
-            doctorId: appointment.doctor ?? payload.doctor,
+            doctorId: doctorIdForBill,
             appointmentDate: appointment.appointment_date ?? payload.appointment_date,
             appointmentTime: appointment.appointment_time_slot ?? payload.appointment_time_slot,
             patientName: linkedPatient?.full_name || '',
+            isNewRegistration: Boolean(location.state?.workflow?.isNewRegistration),
+            followUp: 'APPOINTMENT',
           },
-          notice: `Appointment #${appointment.appointment_id} created. Continue to billing.`,
+          notice: `Appointment #${appointment.appointment_id} and bill #${bill.bill_id} are ready for payment.`,
         },
       });
     } catch (requestError) {
@@ -180,17 +210,24 @@ export default function AppointmentForm() {
 
       <Card
         title="Create appointment"
-        subtitle="Choose a live patient record and enter the Doctor ID accepted by the backend"
+        subtitle="Choose an active doctor and a time accepted by that doctor's schedule"
       >
         {loading ? (
           <div className="loading-line"><span />Loading patients and appointments…</div>
         ) : (
           <>
             <div className="alert alert-info">
-              The current API does not expose a doctor directory or active doctor sessions.
-              Enter the existing Doctor ID; Django validates that the doctor is active and
-              that the time is within an active session.
+              The consultation fee is read from the selected doctor when the bill is created.
+              Django continues to validate the appointment time against the doctor's active session.
             </div>
+            {appointmentCreated && (
+              <div className="alert alert-warning d-flex flex-wrap align-items-center justify-content-between gap-2">
+                <span>Appointment #{appointmentCreated.appointment_id} is saved. Retry bill creation to continue.</span>
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => submit({ preventDefault() {} })} disabled={submitting}>
+                  {submitting ? 'Creating bill…' : 'Retry bill creation'}
+                </button>
+              </div>
+            )}
             <form onSubmit={submit} noValidate>
               <div className="row g-3">
                 <div className="col-md-6">
@@ -201,7 +238,7 @@ export default function AppointmentForm() {
                     value={form.patient}
                     onChange={(event) => updateField('patient', event.target.value)}
                     required
-                    disabled={!activePatients.length}
+                    disabled={!activePatients.length || Boolean(appointmentCreated)}
                   >
                     <option value="">Select a patient</option>
                     {activePatients.map((patient) => (
@@ -213,18 +250,15 @@ export default function AppointmentForm() {
                   {fieldErrors.patient && <div className="invalid-feedback">{fieldErrors.patient}</div>}
                 </div>
                 <div className="col-md-6">
-                  <label className="form-label" htmlFor="appointment-doctor">Doctor ID</label>
-                  <input
+                  <DoctorSelect
                     id="appointment-doctor"
-                    type="number"
-                    min="1"
-                    step="1"
-                    className={fieldClass('doctor')}
                     value={form.doctor}
-                    onChange={(event) => updateField('doctor', event.target.value)}
-                    required
+                    doctors={doctors}
+                    loading={loading}
+                    error={fieldErrors.doctor || doctorError}
+                    onChange={(value) => updateField('doctor', value)}
+                    disabled={Boolean(appointmentCreated)}
                   />
-                  {fieldErrors.doctor && <div className="invalid-feedback">{fieldErrors.doctor}</div>}
                 </div>
                 <div className="col-md-6">
                   <label className="form-label" htmlFor="appointment-date">Appointment date</label>
@@ -232,10 +266,12 @@ export default function AppointmentForm() {
                     id="appointment-date"
                     type="date"
                     min={localDate()}
+                    max={maximumTokenDate()}
                     className={fieldClass('appointment_date')}
                     value={form.appointment_date}
                     onChange={(event) => updateField('appointment_date', event.target.value)}
                     required
+                    disabled={Boolean(appointmentCreated)}
                   />
                   {fieldErrors.appointment_date && <div className="invalid-feedback">{fieldErrors.appointment_date}</div>}
                 </div>
@@ -248,6 +284,7 @@ export default function AppointmentForm() {
                     value={form.appointment_time_slot}
                     onChange={(event) => updateField('appointment_time_slot', event.target.value)}
                     required
+                    disabled={Boolean(appointmentCreated)}
                   />
                   {fieldErrors.appointment_time_slot && <div className="invalid-feedback">{fieldErrors.appointment_time_slot}</div>}
                 </div>
@@ -261,6 +298,7 @@ export default function AppointmentForm() {
                     className={fieldClass('advance_amount')}
                     value={form.advance_amount}
                     onChange={(event) => updateField('advance_amount', event.target.value)}
+                    disabled={Boolean(appointmentCreated)}
                   />
                   {fieldErrors.advance_amount && <div className="invalid-feedback">{fieldErrors.advance_amount}</div>}
                 </div>
@@ -277,8 +315,8 @@ export default function AppointmentForm() {
                 >
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={submitting || !activePatients.length}>
-                  {submitting ? 'Creating…' : 'Create appointment'}
+                <button type="submit" className="btn btn-primary" disabled={submitting || !activePatients.length || !doctors.length}>
+                  {submitting ? 'Creating…' : appointmentCreated ? 'Retry bill creation' : 'Create appointment'}
                 </button>
               </div>
             </form>

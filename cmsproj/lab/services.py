@@ -19,7 +19,7 @@ from rest_framework.exceptions import APIException, NotFound, PermissionDenied, 
 
 from cmsapp.models import LabBill, LabBillItem, LabRequest, LabResult
 
-from .permissions import LAB_TECHNICIAN, get_active_staff
+from .permissions import LAB_ASSISTANT_ROLE_NAMES, get_active_staff
 
 # --- status constants -------------------------------------------------------
 # Taken from the TextChoices already defined in cmsapp.models, so the strings
@@ -211,8 +211,8 @@ def enter_result(*, lab_request, technician_user, data):
     `technician` and `bill` are decided by the SERVER, never by the client.
     """
     staff = get_active_staff(technician_user)
-    if staff is None or staff.role.role_name != LAB_TECHNICIAN:
-        raise PermissionDenied("Only an active LAB_TECHNICIAN can enter results.")
+    if staff is None or staff.role.role_name not in LAB_ASSISTANT_ROLE_NAMES:
+        raise PermissionDenied("An active Lab Assistant or Lab Technician account is required.")
 
     with transaction.atomic():
         req = _lock_request(lab_request.pk)

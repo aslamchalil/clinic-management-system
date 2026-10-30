@@ -4,11 +4,16 @@ cms-react/node_modules/
 cms-react/dist/
 
 # Environment variables and local secrets
+.env
 cms-react/.env
 cms-react/.env.*
 !cms-react/.env.example
 
 # Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
 cmsproj/venv/
 cmsproj/.venv/
 cmsproj/__pycache__/

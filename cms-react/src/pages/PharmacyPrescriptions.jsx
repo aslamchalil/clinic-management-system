@@ -1,0 +1,19 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Card, Empty, Search, Status } from '../components/UI';
+import { errorMessage } from '../services/api';
+import { listPharmacyPrescriptions } from '../services/pharmacyService';
+
+export default function PharmacyPrescriptions() {
+  const navigate = useNavigate(); const [rows, setRows] = useState([]); const [query, setQuery] = useState(''); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
+  const load = async () => { setLoading(true); setError(''); try { setRows(await listPharmacyPrescriptions()); } catch (err) { setError(errorMessage(err)); } finally { setLoading(false); } };
+  useEffect(() => { load(); }, []);
+  const visible = useMemo(() => rows.filter((row) => `${row.prescription_id} ${row.patient_name} ${row.doctor_name} ${row.items?.map((item) => item.medicine_name).join(' ')}`.toLowerCase().includes(query.toLowerCase())), [rows, query]);
+  const openNext = (prescription) => {
+    const active = (prescription.bills || []).find((bill) => bill.payment_status === 'PENDING' || (bill.payment_status === 'PAID' && !bill.dispensed_at));
+    if (active?.payment_status === 'PAID') navigate(`/app/pharmacy/dispensing?billId=${active.pharmacy_bill_id}`);
+    else if (active) navigate(`/app/pharmacy/billing?billId=${active.pharmacy_bill_id}`);
+    else navigate(`/app/pharmacy/billing?prescriptionId=${prescription.prescription_id}`);
+  };
+  return <div className="pharmacy-page">{error && <div className="alert alert-danger" role="alert">{error}</div>}<Card title="Prescription queue" subtitle="Doctor prescriptions and item quantities from persisted records."><div className="cms-toolbar"><Search value={query} onChange={setQuery} placeholder="Search prescription, patient, or medicine"/><button className="btn btn-sm btn-outline-primary" disabled={loading} onClick={load}>Refresh</button></div>{loading ? <div className="loading-line"><span/> Loading prescriptions…</div> : error ? <Empty title="Queue unavailable" description={error}/> : visible.length ? <div className="table-responsive"><table className="table cms-table align-middle"><thead><tr><th>Prescription</th><th>Patient</th><th>Doctor</th><th>Date</th><th>Medicine details</th><th>Current bills</th><th>Action</th></tr></thead><tbody>{visible.map((row) => { const activeBill = (row.bills || []).find((bill) => bill.payment_status === 'PENDING' || (bill.payment_status === 'PAID' && !bill.dispensed_at)); const canBill = row.items?.some((item) => item.available_to_bill > 0); return <tr key={row.prescription_id}><td>#{row.prescription_id}</td><td>{row.patient_name} · #{row.patient_id}</td><td>{row.doctor_name}</td><td>{new Date(row.created_at).toLocaleDateString()}</td><td>{row.items?.length ? <ul className="mb-0 ps-3">{row.items.map((item) => <li key={item.prescription_item_id}><strong>{item.medicine_name}</strong> · {item.dosage_details} · {item.frequency} · {item.duration}<div className="small text-secondary">Prescribed {item.prescribed_quantity}, dispensed {item.dispensed_quantity}, billable {item.available_to_bill}</div></li>)}</ul> : 'No items'}</td><td>{row.bills?.length ? row.bills.map((bill) => <div key={bill.pharmacy_bill_id}>#{bill.pharmacy_bill_id} · <Status value={bill.payment_status}/>{bill.dispensed_at ? <span className="small ms-1">Dispensed</span> : null}</div>) : 'No bill'}</td><td><button className="btn btn-sm btn-primary" disabled={!activeBill && !canBill} onClick={() => openNext(row)}>{activeBill?.payment_status === 'PAID' ? 'Go to dispensing' : activeBill ? 'Open bill' : canBill ? 'Create bill' : 'Fully billed'}</button></td></tr>; })}</tbody></table></div> : <Empty title="No prescriptions found" description="Doctor prescriptions will appear here when they are saved."/>}</Card></div>;
+}

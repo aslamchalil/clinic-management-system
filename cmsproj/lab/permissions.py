@@ -2,6 +2,8 @@
 from rest_framework.permissions import BasePermission
 from cmsapp.models import Staff
 
+LAB_ASSISTANT_ROLE_NAMES = ("LAB_ASSISTANT", "LAB_TECHNICIAN")
+
 
 class IsLabAssistant(BasePermission):
     message = "Active Lab Assistant account required."
@@ -12,7 +14,7 @@ class IsLabAssistant(BasePermission):
 
         return Staff.objects.filter(
             user=request.user,
-            role__role_name="LAB_ASSISTANT",
+            role__role_name__in=LAB_ASSISTANT_ROLE_NAMES,
             role__is_active=True,
             is_active=True,
         ).exists()
@@ -37,7 +39,7 @@ DOCTOR = "DOCTOR"
 
 def get_active_staff(user):
     """Return the active Staff row for this Django user, or None."""
-    if not (user and user.is_authenticated):
+    if not (user and user.is_authenticated and user.is_active):
         return None
     return (
         Staff.objects.select_related("role")
@@ -73,7 +75,13 @@ class IsLabTechnicianOrDoctor(BasePermission):
     message = "Only lab technicians or doctors can access this endpoint."
 
     def has_permission(self, request, view):
-        return get_role_name(request.user) in (LAB_TECHNICIAN, DOCTOR)
+        return get_role_name(request.user) in (
+            LAB_TECHNICIAN,
+            "LAB_ASSISTANT",
+            DOCTOR,
+            "ADMIN",
+            "ADMINISTRATOR",
+        )
 
 
 def limit_to_own_consultations(queryset, user, doctor_user_path):

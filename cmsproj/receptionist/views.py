@@ -1,8 +1,12 @@
+from datetime import date
+
+from django.db import IntegrityError
 from django.shortcuts import render
 
 # Create your views here.
 
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 
 
 
@@ -13,16 +17,21 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 
-from cmsapp.models import Appointment,RegistrationBill,Patient,Token,DoctorSession
-from .serializers import AppointmentSerializer,TokenSerializer
+from cmsapp.models import (
+    Appointment, Doctor, RegistrationBill, Patient, Token, DoctorSession,
+)
+from .serializers import (
+    AppointmentSerializer, DoctorDirectorySerializer, TokenSerializer,
+)
 from .permissions import IsAdminOrReceptionist
 
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 
 from cmsapp.models import Patient
-from .serializers import PatientSerializer,RegistrationBillSerializer
+from .serializers import PatientSerializer, RegistrationBillSerializer
 from clinic_admin.permissions import IsAdminStaff
+from .date_utils import maximum_token_date
 
 
 class PatientListCreateAPIView(generics.ListCreateAPIView):
@@ -63,6 +72,20 @@ class AppointmentDetailAPIView(generics.RetrieveUpdateAPIView):
     lookup_field = "appointment_id"
 
 
+class DoctorDirectoryAPIView(generics.ListAPIView):
+    queryset = Doctor.objects.select_related(
+        "staff", "staff__role"
+    ).prefetch_related(
+        "sessions"
+    ).filter(
+        is_active=True,
+        staff__is_active=True,
+        staff__role__is_active=True,
+    ).order_by("staff__first_name", "staff__last_name")
+    serializer_class = DoctorDirectorySerializer
+    permission_classes = [IsAuthenticated, IsAdminOrReceptionist]
+
+
 
 class RegistrationBillListCreateAPIView(generics.ListCreateAPIView):
     queryset = RegistrationBill.objects.select_related(
@@ -71,6 +94,42 @@ class RegistrationBillListCreateAPIView(generics.ListCreateAPIView):
 
     serializer_class = RegistrationBillSerializer
     permission_classes = [IsAuthenticated, IsAdminOrReceptionist]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            # A concurrent retry may win the unique visit-identity insert.
+            fields = serializer.validated_data
+            appointment = fields.get("appointment")
+            existing = (
+                RegistrationBill.objects.filter(appointment=appointment).first()
+                if appointment is not None
+                else RegistrationBill.objects.filter(
+                    visit_key=fields.get("visit_key")
+                ).first()
+            )
+            if existing is None:
+                raise
+            if (
+                existing.patient_id != fields["patient"].patient_id
+                or existing.doctor_id != fields["doctor"].doc_id
+            ):
+                return Response(
+                    {"detail": "This visit identity is already in use."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            serializer.instance = existing
+            serializer.was_reused = True
+
+        headers = self.get_success_headers(serializer.data)
+        response_status = (
+            status.HTTP_200_OK if serializer.was_reused
+            else status.HTTP_201_CREATED
+        )
+        return Response(serializer.data, status=response_status, headers=headers)
 
 
 class RegistrationBillDetailAPIView(generics.RetrieveAPIView):
@@ -87,16 +146,30 @@ class RegistrationBillDetailAPIView(generics.RetrieveAPIView):
 class RegistrationBillPaymentAPIView(APIView):
     permission_classes = [IsAuthenticated, IsAdminOrReceptionist]
 
+    @transaction.atomic
     def post(self, request, bill_id):
         bill = get_object_or_404(
-            RegistrationBill,
+            RegistrationBill.objects.select_for_update(),
             bill_id=bill_id
         )
 
         if bill.payment_status == "PAID":
+            requested_method = request.data.get("payment_method")
+            response_data = {
+                "detail": "Payment was already recorded; the persisted payment was not changed.",
+                "bill_id": bill.bill_id,
+                "total_amount": str(bill.total_amount),
+                "payment_status": bill.payment_status,
+                "payment_method": bill.payment_method,
+            }
+            response_status = (
+                status.HTTP_200_OK
+                if requested_method == bill.payment_method
+                else status.HTTP_409_CONFLICT
+            )
             return Response(
-                {"detail": "This bill has already been paid."},
-                status=status.HTTP_400_BAD_REQUEST
+                response_data,
+                status=response_status
             )
 
         if bill.payment_status != "PENDING":
@@ -149,6 +222,17 @@ class TokenGenerateAPIView(APIView):
         session = request.data.get("session")
         appointment_id = request.data.get("appointment")
 
+        if appointment_id in (None, ""):
+            appointment_id = None
+        else:
+            try:
+                appointment_id = int(appointment_id)
+            except (TypeError, ValueError):
+                return Response(
+                    {"appointment": "Provide a valid appointment ID."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         if not bill_id or not token_date or not session:
             return Response(
                 {
@@ -185,6 +269,12 @@ class TokenGenerateAPIView(APIView):
         if Token.objects.filter(bill=bill).exists():
             return Response(
                 {"detail": "A token already exists for this bill."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if bill.appointment_id and appointment_id != bill.appointment_id:
+            return Response(
+                {"appointment": "Use the appointment linked to this bill."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -265,9 +355,7 @@ class TokenGenerateAPIView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        # Validate date format and prevent past-date tokens.
-        from datetime import date
-
+        # Validate date format and enforce the two-calendar-month window.
         try:
             parsed_date = date.fromisoformat(token_date)
         except (TypeError, ValueError):
@@ -282,8 +370,28 @@ class TokenGenerateAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        if parsed_date > maximum_token_date():
+            return Response(
+                {
+                    "token_date": (
+                        "Choose a date no more than two calendar months "
+                        "from today."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        doctor = get_object_or_404(
+            Doctor.objects.select_for_update(), doc_id=bill.doctor_id
+        )
+        if not doctor.is_active:
+            return Response(
+                {"detail": "The doctor must be active."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         existing_tokens = Token.objects.filter(
-            doctor=bill.doctor,
+            doctor=doctor,
             token_date=parsed_date,
         )
 
@@ -299,7 +407,7 @@ class TokenGenerateAPIView(APIView):
             )
 
         last_token = Token.objects.filter(
-            doctor=bill.doctor,
+            doctor=doctor,
             token_date=parsed_date,
             session=session,
         ).order_by("-token_number").first()
@@ -310,7 +418,7 @@ class TokenGenerateAPIView(APIView):
 
         token = Token.objects.create(
             patient=bill.patient,
-            doctor=bill.doctor,
+            doctor=doctor,
             bill=bill,
             appointment=appointment,
             token_number=next_number,
@@ -342,6 +450,25 @@ class TokenListAPIView(generics.ListAPIView):
 
     serializer_class = TokenSerializer
     permission_classes = [IsAuthenticated, IsAdminOrReceptionist]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        bill_id = self.request.query_params.get("bill_id")
+        if bill_id is not None:
+            try:
+                return queryset.filter(bill_id=int(bill_id))
+            except (TypeError, ValueError):
+                return queryset.none()
+
+        token_date = self.request.query_params.get("token_date")
+        if token_date == "all":
+            return queryset
+        if token_date:
+            parsed_date = parse_date(token_date)
+            return queryset.filter(token_date=parsed_date) if parsed_date else queryset.none()
+
+        # The unfiltered endpoint is the receptionist's live queue: clinic-local today.
+        return queryset.filter(token_date=timezone.localdate())
 
 
 class TokenDetailAPIView(generics.RetrieveAPIView):

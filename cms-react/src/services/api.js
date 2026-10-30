@@ -1,23 +1,9 @@
 ﻿import axios from 'axios';
 
-export const ROLE_ID_TO_NAME = {
-  1: 'DOCTOR',
-  2: 'PHARMACIST',
-  3: 'ADMIN',
-  4: 'LAB_ASSISTANT',
-  5: 'RECEPTIONIST',
-};
-
 export function normalizeRoleName(role) {
   if (role === null || role === undefined || role === '') return '';
 
   const value = String(role).trim();
-  const asNumber = Number(value);
-
-  if (!Number.isNaN(asNumber) && Object.prototype.hasOwnProperty.call(ROLE_ID_TO_NAME, asNumber)) {
-    return ROLE_ID_TO_NAME[asNumber];
-  }
-
   const normalized = value.toUpperCase();
   return normalized === 'LAB_TECHNICIAN' ? 'LAB_ASSISTANT' : normalized;
 }
@@ -140,7 +126,6 @@ export const endpoints = {
     staff: {url:'/auth/staff/', title:'Staff', fields:['staff_id','username','first_name','last_name','role','department','email','phone_number','is_active']},
     departments:{url:'/auth/departments/',title:'Departments',fields:['department_id','department_name','is_active']},
     specializations:{url:'/auth/specializations/',title:'Specializations',fields:['spec_id','spec_name']},
-    doctors:{url:'/auth/staff/',title:'Staff directory',fields:['staff_id','first_name','last_name','role','department','email','is_active'],filterRole:'DOCTOR'},
     medicines:{url:'/pharmacy/medicines/',title:'Medicines',fields:['medicine_id','name','generic_name','category','is_active']},
     'lab-tests':{url:'/lab/tests/',title:'Lab test catalogue',fields:['test_id','test_name','test_type','test_price','is_active']},
   },

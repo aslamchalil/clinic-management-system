@@ -11,7 +11,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
 from cmsapp.models import (
-    Consultation, Department, Doctor, LabBill, LabRequest, LabResult,
+    Consultation, Department, Doctor, DoctorSession, LabBill, LabRequest, LabResult,
     MasterLabTest, Patient, RegistrationBill, Role, Specialization, Staff, Token,
 )
 
@@ -20,7 +20,7 @@ User = get_user_model()
 
 # ------------------------------------------------------------------ helpers
 import itertools
-from datetime import date
+from datetime import date, time
 
 _counter = itertools.count(1)
 
@@ -95,10 +95,84 @@ class LabWorkflowTests(APITestCase):
 
     # -- permissions
     def test_anonymous_and_wrong_role_blocked(self):
-        self.assertEqual(self.client.get("/lab/requests/").status_code, 403)
+        anonymous_response = self.client.get("/api/lab/requests/")
+        self.assertIn(anonymous_response.status_code, (401, 403))
         self.client.force_authenticate(self.recep)
-        self.assertEqual(self.client.get("/lab/requests/").status_code, 403)
-        self.assertEqual(self.client.post("/lab/bills/", {"lab_request_ids": [1]}, format="json").status_code, 403)
+        self.assertEqual(self.client.get("/api/lab/requests/").status_code, 403)
+        self.assertEqual(self.client.post("/api/lab/bills/", {"lab_request_ids": [1]}, format="json").status_code, 403)
+
+    def test_lab_roles_can_list_active_doctor_created_requests(self):
+        token = self.consult.token
+        token.status = Token.StatusChoices.CONSULTING
+        token.save(update_fields=["status"])
+        DoctorSession.objects.create(
+            doctor=self.doctor,
+            session=token.session,
+            start_time=time(9, 0),
+            end_time=time(17, 0),
+        )
+
+        self.client.force_authenticate(self.doc_user)
+        created = self.client.post(
+            "/api/doctor/lab-requests/",
+            {"consultation": self.consult.consult_id, "test": self.cbc.test_id, "priority": "NORMAL"},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        request_id = created.data["lab_request_id"]
+        self.assertTrue(created.data["is_active"])
+
+        lab_assistant, _ = make_staff("lab-assistant", "LAB_ASSISTANT", self.tech_staff.department)
+        for lab_user in (self.tech, lab_assistant):
+            with self.subTest(role=lab_user.staff_profile.role.role_name):
+                self.client.force_authenticate(lab_user)
+                response = self.client.get("/api/lab/requests/")
+                self.assertEqual(response.status_code, 200, response.data)
+                rows = self._rows_from(response.data)
+                self.assertIn(request_id, [row["lab_request_id"] for row in rows])
+
+    def test_billing_payment_processing_and_result_use_server_state(self):
+        self.client.force_authenticate(self.tech)
+        created = self.client.post(
+            "/api/lab/bills/",
+            {"lab_request_ids": [self.r1.lab_request_id, self.r2.lab_request_id]},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        bill_id = created.data["lab_bill_id"]
+        self.assertEqual(Decimal(created.data["total_amount"]), Decimal("420.50"))
+        self.assertEqual(len(created.data["items"]), 2)
+
+        paid = self.client.patch(
+            f"/api/lab/bills/{bill_id}/payment/",
+            {"payment_method": "UPI"},
+            format="json",
+        )
+        self.assertEqual(paid.status_code, 200, paid.data)
+        self.assertEqual(paid.data["payment_status"], "PAID")
+        self.assertEqual(self.client.patch(
+            f"/api/lab/bills/{bill_id}/payment/",
+            {"payment_method": "UPI"}, format="json",
+        ).status_code, 409)
+
+        for lab_request in (self.r1, self.r2):
+            started = self.client.post(f"/api/lab/requests/{lab_request.lab_request_id}/start-processing/")
+            self.assertEqual(started.status_code, 200, started.data)
+            self.assertEqual(started.data["status"], "IN_PROGRESS")
+            result = self.client.post(
+                f"/api/lab/requests/{lab_request.lab_request_id}/result/",
+                {"result_value": "Within range", "unit": "mg/dL", "reference_range": "4-11", "report": "Verified"},
+                format="json",
+            )
+            self.assertEqual(result.status_code, 201, result.data)
+            lab_request.refresh_from_db()
+            self.assertEqual(lab_request.status, "COMPLETED")
+            duplicate = self.client.post(
+                f"/api/lab/requests/{lab_request.lab_request_id}/result/",
+                {"result_value": "Duplicate"},
+                format="json",
+            )
+            self.assertEqual(duplicate.status_code, 409)
 
     def test_doctor_cannot_bill_or_enter_results(self):
         self.client.force_authenticate(self.doc_user)
@@ -212,6 +286,11 @@ class LabWorkflowTests(APITestCase):
     def _rows(self, url):
         """Works with or without DRF pagination enabled in settings."""
         data = self.client.get(url).data
+        return self._rows_from(data)
+
+    @staticmethod
+    def _rows_from(data):
+        """Normalize a raw or paginated DRF list response."""
         return data["results"] if isinstance(data, dict) and "results" in data else data
 
     # -- master tests are read-only in the lab module

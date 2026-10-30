@@ -15,8 +15,10 @@ from .views import PatientDetailAPIView, PatientListCreateAPIView
 from .views import (AppointmentListCreateAPIView,AppointmentDetailAPIView,)
 
 from .views import TokenStatusUpdateAPIView
+from .views import DoctorDirectoryAPIView
 
 urlpatterns = [
+    path("doctors/", DoctorDirectoryAPIView.as_view(), name="receptionist-doctor-list"),
     path("patients/", PatientListCreateAPIView.as_view(), name="patient-list-create"),
     path("patients/<int:patient_id>/", PatientDetailAPIView.as_view(), name="patient-detail"),
 

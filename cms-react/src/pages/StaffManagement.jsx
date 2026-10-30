@@ -1,5 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { api, unwrap, errorMessage } from '../services/api';
+import { errorMessage } from '../services/api';
+import {
+  createStaff,
+  listDepartments,
+  listRoles,
+  listStaff,
+  updateStaff,
+  updateStaffStatus,
+} from '../services/adminService';
 import { Card, Search, Status, Empty } from '../components/UI';
 
 const INITIAL_FORM = {
@@ -15,6 +23,21 @@ const INITIAL_FORM = {
   department: '',
 };
 
+function isAtLeast26(dob) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dob || '');
+  if (!match) return false;
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const birthDate = new Date(year, month - 1, day);
+  if (birthDate.getFullYear() !== year || birthDate.getMonth() !== month - 1 || birthDate.getDate() !== day) return false;
+  const today = new Date();
+  let age = today.getFullYear() - year;
+  if (today.getMonth() + 1 < month || (today.getMonth() + 1 === month && today.getDate() < day)) age -= 1;
+  return age >= 26;
+}
+
 export default function StaffManagement() {
   const [staff, setStaff] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -28,21 +51,21 @@ export default function StaffManagement() {
   const [formErrors, setFormErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [busyId, setBusyId] = useState(null);
+  const [editingMember, setEditingMember] = useState(null);
+  const [assignment, setAssignment] = useState({ role: '', department: '' });
+  const [assignmentError, setAssignmentError] = useState('');
 
   const fetchData = async () => {
     setLoading(true);
     setError('');
 
     try {
-      const [staffRes, rolesRes, departmentsRes] = await Promise.all([
-        api.get('/auth/staff/'),
-        api.get('/auth/roles/'),
-        api.get('/auth/departments/'),
+      const [staffRows, roleRows, departmentRows] = await Promise.all([
+        listStaff(), listRoles(), listDepartments(),
       ]);
-
-      setStaff(unwrap(staffRes.data));
-      setRoles(unwrap(rolesRes.data));
-      setDepartments(unwrap(departmentsRes.data));
+      setStaff(staffRows);
+      setRoles(roleRows);
+      setDepartments(departmentRows);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -97,6 +120,7 @@ export default function StaffManagement() {
     if (!form.phone_number.trim()) nextErrors.phone_number = 'Phone number is required.';
     else if (!/^\+?[0-9\s\-()]{7,20}$/.test(form.phone_number)) nextErrors.phone_number = 'Enter a valid phone number.';
     if (!form.dob) nextErrors.dob = 'Date of birth is required.';
+    else if (!isAtLeast26(form.dob)) nextErrors.dob = 'Staff must be older than 25 years.';
     if (!form.role) nextErrors.role = 'Role is required.';
     if (!form.department) nextErrors.department = 'Department is required.';
     if (!['MALE', 'FEMALE', 'OTHER'].includes(form.gender)) nextErrors.gender = 'Select a valid gender.';
@@ -128,7 +152,7 @@ export default function StaffManagement() {
         department: Number(form.department),
       };
 
-      await api.post('/auth/staff/', payload);
+      await createStaff(payload);
 
       setForm(INITIAL_FORM);
       setIsModalOpen(false);
@@ -159,13 +183,49 @@ export default function StaffManagement() {
     setNotice('');
 
     try {
-      await api.patch(`/auth/staff/${member.staff_id}/`, { is_active: nextState });
+      await updateStaffStatus(member.staff_id, nextState);
       setNotice(
         `${member.first_name} ${member.last_name} is now ${nextState ? 'active' : 'inactive'}.`
       );
       await fetchData();
     } catch (err) {
       setError(errorMessage(err));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const openAssignmentEditor = (member) => {
+    setEditingMember(member);
+    setAssignment({ role: String(member.role), department: String(member.department), dob: member.dob || '' });
+    setAssignmentError('');
+  };
+
+  const saveAssignment = async (event) => {
+    event.preventDefault();
+    if (!assignment.role || !assignment.department) {
+      setAssignmentError('Choose an active role and department.');
+      return;
+    }
+    if (!isAtLeast26(assignment.dob)) {
+      setAssignmentError('Staff must be older than 25 years.');
+      return;
+    }
+    setBusyId(editingMember.staff_id);
+    setAssignmentError('');
+    setError('');
+    setNotice('');
+    try {
+      await updateStaff(editingMember.staff_id, {
+        role: Number(assignment.role),
+        department: Number(assignment.department),
+        dob: assignment.dob,
+      });
+      setNotice(`Role and department updated for ${editingMember.first_name} ${editingMember.last_name}.`);
+      setEditingMember(null);
+      await fetchData();
+    } catch (err) {
+      setAssignmentError(errorMessage(err));
     } finally {
       setBusyId(null);
     }
@@ -219,10 +279,18 @@ export default function StaffManagement() {
                     <td>{`${member.first_name || ''} ${member.last_name || ''}`.trim() || '—'}</td>
                     <td>{member.email || '—'}</td>
                     <td>{member.phone_number || '—'}</td>
-                    <td>{roleMap[member.role] || member.role || '—'}</td>
-                    <td>{departmentMap[member.department] || member.department || '—'}</td>
+                    <td>{member.role_name || roleMap[member.role] || member.role || '—'}</td>
+                    <td>{member.department_name || departmentMap[member.department] || member.department || '—'}</td>
                     <td><Status value={member.is_active ? 'ACTIVE' : 'INACTIVE'} /></td>
                     <td>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-primary me-2"
+                        onClick={() => openAssignmentEditor(member)}
+                        disabled={busyId === member.staff_id}
+                      >
+                        Edit assignment
+                      </button>
                       <button
                         type="button"
                         className={`btn btn-sm ${member.is_active ? 'btn-outline-danger' : 'btn-outline-success'}`}
@@ -351,7 +419,7 @@ export default function StaffManagement() {
                         onChange={(e) => updateField('role', e.target.value)}
                       >
                         <option value="">Select role</option>
-                        {roles.map((role) => (
+                        {roles.filter((role) => role.is_active).map((role) => (
                           <option key={role.role_id} value={role.role_id}>
                             {role.role_name}
                           </option>
@@ -368,7 +436,7 @@ export default function StaffManagement() {
                         onChange={(e) => updateField('department', e.target.value)}
                       >
                         <option value="">Select department</option>
-                        {departments.map((department) => (
+                        {departments.filter((department) => department.is_active).map((department) => (
                           <option key={department.department_id} value={department.department_id}>
                             {department.department_name}
                           </option>
@@ -385,6 +453,48 @@ export default function StaffManagement() {
                   </button>
                   <button type="submit" className="btn btn-primary" disabled={submitting}>
                     {submitting ? 'Saving…' : 'Save staff'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingMember && (
+        <div className="modal fade show d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.35)' }}>
+          <div className="modal-dialog modal-dialog-centered" role="document">
+            <div className="modal-content">
+              <form onSubmit={saveAssignment}>
+                <div className="modal-header">
+                  <h5 className="modal-title">Edit staff assignment</h5>
+                  <button type="button" className="btn-close" onClick={() => setEditingMember(null)} aria-label="Close" />
+                </div>
+                <div className="modal-body">
+                  {assignmentError && <div className="alert alert-danger">{assignmentError}</div>}
+                  <p className="small text-secondary">{editingMember.first_name} {editingMember.last_name}</p>
+                  <label className="form-label" htmlFor="staff-edit-dob">Date of birth</label>
+                  <input id="staff-edit-dob" type="date" className="form-control mb-3" value={assignment.dob} onChange={(event) => setAssignment((current) => ({ ...current, dob: event.target.value }))} required />
+                  <label className="form-label" htmlFor="staff-edit-role">Role</label>
+                  <select id="staff-edit-role" className="form-select mb-3" value={assignment.role} onChange={(event) => setAssignment((current) => ({ ...current, role: event.target.value }))} required>
+                    <option value="">Select active role</option>
+                    {roles.filter((role) => role.is_active).map((role) => (
+                      <option key={role.role_id} value={role.role_id}>{role.role_name}</option>
+                    ))}
+                  </select>
+                  <label className="form-label" htmlFor="staff-edit-department">Department</label>
+                  <select id="staff-edit-department" className="form-select" value={assignment.department} onChange={(event) => setAssignment((current) => ({ ...current, department: event.target.value }))} required>
+                    <option value="">Select active department</option>
+                    {departments.filter((department) => department.is_active).map((department) => (
+                      <option key={department.department_id} value={department.department_id}>{department.department_name}</option>
+                    ))}
+                  </select>
+                  <div className="form-text mt-2">This edit does not change the account password.</div>
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-outline-secondary" onClick={() => setEditingMember(null)} disabled={busyId === editingMember.staff_id}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" disabled={busyId === editingMember.staff_id}>
+                    {busyId === editingMember.staff_id ? 'Saving…' : 'Save assignment'}
                   </button>
                 </div>
               </form>

@@ -9,8 +9,13 @@ from .views import (
     MasterLabTestListAPIView,
     LabRequestListAPIView,
     LabRequestDetailAPIView,
+    LabDashboardAPIView,
+    LabPatientSearchAPIView,
+    LabRequestStartProcessingAPIView,
 )
 urlpatterns = [
+    path("dashboard/", LabDashboardAPIView.as_view(), name="lab-dashboard"),
+    path("patients/search/", LabPatientSearchAPIView.as_view(), name="lab-patient-search"),
     path(
         "bills/<int:lab_bill_id>/",
         LabBillDetailAPIView.as_view(),
@@ -30,6 +35,11 @@ urlpatterns = [
         "requests/<int:lab_request_id>/result/",
         LabResultCreateAPIView.as_view(),
         name="lab-result-create",
+    ),
+    path(
+        "requests/<int:lab_request_id>/start-processing/",
+        LabRequestStartProcessingAPIView.as_view(),
+        name="lab-request-start-processing",
     ),
     path(
         "requests/<int:lab_request_id>/",
